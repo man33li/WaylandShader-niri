@@ -311,6 +311,19 @@ impl Winit {
             draw_damage(&mut output_state.debug_damage_tracker, &mut elements);
         }
 
+        // Apply only at presentation: captures keep the unfiltered scene.
+        let unlocked = matches!(niri.lock_state, crate::niri::LockState::Unlocked);
+        if let Some(effect) =
+            niri.waylandshader
+                .prepare(self.backend.renderer(), output, unlocked, true)
+        {
+            elements.insert(0, effect.into());
+        }
+        niri.output_state
+            .get_mut(output)
+            .unwrap()
+            .unfinished_animations_remain |= niri.waylandshader.animated(output);
+
         // Hand them over to winit.
         let res = {
             let (renderer, mut framebuffer) = self.backend.bind().unwrap();

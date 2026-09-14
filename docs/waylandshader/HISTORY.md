@@ -1,0 +1,185 @@
+# History and maintenance decisions
+
+[Build and controls](README.md) · [Manual upgrades](UPGRADING.md)
+
+This records the project's development through the standalone-fork migration on
+**2026-09-14**. Historical checks below are records from the previous workspace,
+not claims that every backend was re-tested during this migration. Dates are
+included where recorded; the exact date of the initial KWin implementation is
+not inferred from file timestamps.
+
+## Origin: native WaylandShader for KWin
+
+The original [Wayland-Shader-KDE repository](https://github.com/man33li/Wayland-Shader-KDE)
+implemented a native KWin 6.6 C++20 effect, a Qt settings application, and an
+asynchronous D-Bus/CLI interface. RetroArch `.slangp` presets ran through
+librashader 0.10.1 inside the compositor, not a screen-capture overlay.
+
+The design established transactional worker-thread preset compilation,
+per-output temporal history, shader parameters, persistent monitor profiles,
+and independently enabled gamma/saturation. A private librashader build fixed
+GL resource lifetimes and temporal initialization without replacing the system
+library. Its private SONAME is retained here.
+
+The inherited KWin record described a Nix build and three CTest checks, including
+an isolated two-output KWin 6.6.6 session on an AMD RX 6800 XT. That is historical
+evidence, not a full KWin rebuild on the later CachyOS laptop.
+
+## Native niri integration: the separate-backend phase
+
+The implementation was extended on the old repository's `niri-backend` branch;
+its inherited repository baseline was commit
+`6579b80e3cc7dd04ae3fd04f74c27fca5c8136bd`.
+By 2026-09-13 it built a separately named niri from the v26.04 commit
+`8ed0da44d974c32c6877d2f4630c314da0717ecb` using a maintained source patch.
+KWin's root CMake/Nix build remained separate from the niri builder.
+
+niri/Smithay renders with GLES, whereas the chosen shader runtime needs desktop
+OpenGL. The port used **EGLImage storage exchange between unshared contexts**,
+not unsupported cross-API share groups. It added GPU fence ordering, exact EGL
+state restoration, per-output chain/history ownership, presentation-only hooks,
+lock/history invalidation, and teardown before the backend EGL display vanished.
+
+The port retained native Qt/CLI controls with distinct executable, D-Bus, settings
+and login-session names. Stock niri and system librashader were not replaced.
+Active filtering disabled hardware planes/direct scanout. Capture paths stayed
+unfiltered; software rendering and incompatible cross-GPU paths were rejected.
+
+Recorded CachyOS nested verification covered multipass/LUT rendering, live
+parameters, failed-preset rollback, color and per-output bypass, resize,
+persistence and immediate control acknowledgements. The GUI was displayed and
+CLI/D-Bus mutations exercised. Pixel comparisons distinguished filtered
+presentation from unfiltered source screenshots. These checks did not certify
+native DRM/lock/hotplug/HDR/VRR behavior.
+
+The user subsequently installed the separately named compositor as the actual
+desktop session and reported a real VHSPro rendering defect. That user report
+was not dismissed because the isolated tests had passed.
+
+## 2026-09-14: VHSPro horizontal-band correction
+
+The bridge allocated full mip storage but exposed uninitialized higher levels.
+VHSPro's quantized coordinates could select those levels through implicit
+texture derivatives even with scanlines/noise disabled. The result was dark
+horizontal banding, not an intended parameter setting.
+
+The fix is in the host, not a special-case shader edit:
+
+1. New input images expose only their initialized base level.
+2. Private GL 3.3 and GL 4.6 runtime paths expose additional levels when actually
+   generating mipmaps requested by the preset.
+3. A retained high-LOD/no-mipmap regression guards the undefined-level boundary.
+
+The regression failed before the correction (zero instead of the expected
+0.75 sample) and passed afterward. Isolated 121-frame real VHSPro renders
+removed the defect on Radeon 680M and RX 6700S, Mesa 26.2.2. Default GL and
+GL 3.3 bridge regressions passed on both GPUs; GL 3.3/default-GL frame 60 was
+pixel-identical on the 680M. Separate shared-context runtime checks passed on
+GL 4.6 and 3.3, including robust contexts; this was not a full KWin build.
+
+The corrected historical Arch package was
+`niri-waylandshader-26.04.ws0.1.0-2-x86_64.pkg.tar.zst`, SHA-256:
+
+```text
+165dc4c2ada4e5732548bad486c967fed83ed1e4f3815dbf8a7ad5b1a634e39d
+```
+
+That local artifact and the earlier package were retained in the old workspace
+for rollback, not copied into Git. User presets/settings were not changed.
+An unidentified GNOME reference build was unavailable for an exact parity
+comparison; no pixel-parity claim is made.
+
+## 2026-09-14: upstream-checking investigation
+
+Official niri v26.04 and `main` at
+`e1d3b0c47ce5bb77f16e5006aba604d23b233649` had no supported persistent
+whole-output shader plugin interface. Animation shaders were not a replacement.
+A `.so` would still require compositor hooks, so it would not eliminate upstream
+integration work. [Upstream discussion #913](https://github.com/niri-wm/niri/issues/913)
+provides context; this is a statement about the inspected baseline, not a
+prediction that niri will never add an extension API.
+
+The first checker tested pinned-patch candidates and optionally built them,
+without installation or promotion. Stable v26.04 matched the pin. An explicit
+pinned candidate built, while main failed the old Cargo.toml/Cargo.lock patch
+contexts. Invalid references and an actual compiler failure produced distinct
+failure reports. An owned current-user weekly timer was installed and exercised.
+
+This exposed the maintenance problem: an independent niri patch in a KWin
+repository discarded Git's useful fork ancestry and made ordinary upstream
+changes look like patch-context failures.
+
+## 2026-09-14: standalone WaylandShader-niri fork
+
+The user created [man33li/WaylandShader-niri](https://github.com/man33li/WaylandShader-niri)
+as a real fork of [niri-wm/niri](https://github.com/niri-wm/niri), with default
+branch `main`. Development moved to a complete-history clone based directly on
+upstream `e1d3b0c47ce5bb77f16e5006aba604d23b233649`.
+
+The standalone migration:
+
+- Integrates the Rust output manager and presentation/lifecycle hooks directly
+  into niri's current source, retaining its current Smithay revision
+  `22571baa20d34d71092942dbb520c4e3fbbd6263` rather than downgrading to v26.04.
+- Builds the root Cargo workspace. Removes the second niri checkout, niri pin,
+  module-copy step and maintained niri patch from the active build path.
+- Keeps private librashader pinned/patched separately, including the VHSPro fix.
+- Moves bridge, controls, build/package/preview tools and regressions under
+  `waylandshader/`. Qt clients become niri-only; no KWin conditional build remains.
+- Preserves executable/package identities, D-Bus protocol and niri settings path,
+  so the repository move does not require resetting user shader profiles.
+- Replaces patch applicability with committed-fork ancestry and isolated Git
+  merge candidates. A dirty source tree is refused rather than silently checking
+  an older HEAD. No checker result claims runtime validation.
+- Retains an optional owned weekly report/build timer, but makes upstream
+  promotion, installation and session changes explicitly manual.
+- Uses extension version 0.2.0 / initial Arch package `26.04.ws0.2.0-1`.
+
+The user explicitly selected **Arch and source builds**. Inherited Nix, RPM,
+DEB and release/deployment entrypoints were retired instead of pretending bare
+upstream builds would link the native bridge or install the separate session.
+CI now builds this fork and its Qt support, runs nonvisual Rust tests and checks
+the no-default-features build. GPU/native-session acceptance remains manual.
+Upstream configuration/reference documentation and attribution remain intact.
+
+The old workspace, KWin source, packages and private handoff archives were
+preserved, not reset, removed or published. This migration does not install over
+or restart the live compositor, and does not publish a remote commit by itself.
+
+### Local migration verification
+
+The checked-out main-based source, not a separately patched niri clone, built
+and staged successfully on CachyOS x86_64 with Qt 6.11.2 and Mesa 26.2.2.
+Verification during the migration included:
+
+- 222 passing nonvisual Rust tests/doc-tests across niri, niri-config and
+  niri-ipc; the no-default-features build also passed.
+- The retained bridge regression on Radeon 680M and RX 6700S, through both
+  default desktop GL and forced GL 3.3: four hardware passes, not skips.
+- A private nested session displaying the migrated Qt controller, exercising
+  real CLI/D-Bus color controls, a real VHSPro preset, a parameter change,
+  failed-preset rollback, independent shader bypass and master disable.
+- Matched 1244×1502 captures: the unfiltered source retained colored pixels;
+  saturation-zero presentation had none and reflected the gamma adjustment.
+- Normal nested compositor exit after a quit request. The live desktop's
+  shader-settings checksum remained unchanged.
+- Four real-Git fixture regressions for combining fork/upstream changes,
+  retaining conflicts and manual resolutions, preserving staged candidate edits,
+  and refusing dirty source while allowing ignored build artifacts. Moving a
+  retained worktree/preparation record aside and retrying was exercised.
+- The actual checker refused the uncommitted migration before upstream lookup,
+  rather than reporting compatibility for the previous HEAD.
+
+Hosted GitHub CI was configured, not executed or published by these local
+checks. Physical DRM/lock/hotplug/HDR/VRR acceptance remains unclaimed. Current
+official-ref preflight results and build logs are retained outside Git under
+`build/upstream-candidates/`; the checker never labels those runtime passes.
+
+## Going forward
+
+Follow [UPGRADING.md](UPGRADING.md), not the historical pinned-patch procedure.
+Keep the fork's shared `main` merge-based; preserve upstream changes and make
+small integration adjustments. Record the exact upstream SHA, fork SHA, package
+version, verification results and remaining hardware limitations for each
+promoted upgrade. A clean merge or successful compilation is not evidence that
+a new compositor is safe to replace a running desktop.

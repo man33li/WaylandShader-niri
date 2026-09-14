@@ -1,10 +1,19 @@
 ## Running a Local Build
 
-The main way of testing niri during development is running it as a nested window. The second step is usually switching to a different TTY and running niri there.
+This checkout is the **WaylandShader-niri fork**. Follow its
+[build and preview guide](../waylandshader/README.md) and
+[manual upgrade/rollback procedure](../waylandshader/UPGRADING.md).
 
-Once a feature or fix is reasonably complete, you generally want to run a local build as your main compositor for proper testing. The easiest way to do that is to install niri normally (from a distro package for example), then overwrite the binary with `sudo cp ./target/release/niri /usr/bin/niri`. Do make sure that you know how to revert to a working version in case everything breaks though.
+```sh
+python3 waylandshader/build.py --tests
+python3 waylandshader/run-nested.py
+```
 
-If you use an RPM-based distro, you can generate an RPM package for a local build with `cargo generate-rpm`.
+Prepare native support and export the documented library paths before ordinary
+Cargo tests. Use the separately named Arch package/login session for physical
+testing; do not overwrite `/usr/bin/niri` or replace a running compositor.
+RPM/Nix/DEB recipes are not maintained in this fork. The remaining sections
+describe upstream niri development conventions.
 
 ## Logging Levels
 

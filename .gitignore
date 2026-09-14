@@ -2,3 +2,11 @@
 /result
 
 .idea
+
+/build/
+/.cache/clangd/
+/compile_commands.json
+__pycache__/
+/waylandshader/pkg/
+/waylandshader/src/
+/waylandshader/*.pkg.tar.*

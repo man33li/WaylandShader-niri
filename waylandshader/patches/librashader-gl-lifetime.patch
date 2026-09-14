@@ -1,0 +1,1019 @@
+diff -ruN a/librashader-runtime-gl/src/filter_chain/chain.rs b/librashader-runtime-gl/src/filter_chain/chain.rs
+--- a/librashader-runtime-gl/src/filter_chain/chain.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/filter_chain/chain.rs	2026-09-08 19:44:09.180042568 +0400
+@@ -1,3 +1,4 @@
++use crate::gl::owned::GlObjects;
+ use crate::binding::{GlUniformStorage, UniformLocation, VariableLocation};
+ use crate::error::FilterChainError;
+ use crate::filter_pass::{FilterPass, UniformOffset};
+@@ -54,6 +55,7 @@
+     // semantics: ReflectSemantics,
+     pub config: RuntimeParameters,
+     pub luts: FastHashMap<usize, InputTexture>,
++    pub _lut_objects: GlObjects,
+     pub samplers: SamplerSet,
+     pub output_textures: Box<[InputTexture]>,
+     pub feedback_textures: Box<[InputTexture]>,
+@@ -175,7 +177,7 @@
+         let samplers = SamplerSet::new(&context)?;
+ 
+         // load luts
+-        let luts = T::LoadLut::load_luts(&context, preset.textures)?;
++        let (luts, lut_objects) = T::LoadLut::load_luts(&context, preset.textures)?;
+ 
+         let framebuffer_gen = || T::FramebufferInterface::new(&context, 1);
+         let input_gen = || InputTexture {
+@@ -217,6 +219,7 @@
+                 config,
+                 disable_mipmaps: options.map_or(false, |o| o.force_no_mipmaps),
+                 luts,
++                _lut_objects: lut_objects,
+                 samplers,
+                 output_textures,
+                 feedback_textures,
+@@ -230,7 +233,7 @@
+     }
+ 
+     fn init_passes(
+-        context: &glow::Context,
++        context: &Arc<glow::Context>,
+         version: GlslVersion,
+         passes: Vec<ShaderPassMeta>,
+         semantics: &ShaderSemantics,
+@@ -243,7 +246,7 @@
+             let reflection = reflect.reflect(index, semantics)?;
+             let glsl = reflect.compile(version)?;
+ 
+-            let (program, ubo_location) =
++            let (program, ubo_location, program_objects) =
+                 T::CompileShader::compile_program(context, glsl, !disable_cache)?;
+ 
+             let ubo_ring = if let Some(ubo) = &reflection.ubo {
+@@ -271,6 +274,7 @@
+             filters.push(FilterPass {
+                 reflection,
+                 program,
++                _program_objects: program_objects,
+                 ubo_location,
+                 ubo_ring,
+                 uniform_storage,
+@@ -311,11 +315,16 @@
+         let max = std::cmp::min(self.passes.len(), self.common.config.passes_enabled());
+         let passes = &mut self.passes[0..max];
+ 
+-        if let Some(options) = options {
+-            if options.clear_history {
+-                for framebuffer in &self.history_framebuffers {
+-                    framebuffer.clear::<T::FramebufferInterface, true>()
+-                }
++        // Every history slot must be valid before the first draw, not only
++        // the slot rotated in by push_history after that draw.
++        for framebuffer in &mut self.history_framebuffers {
++            if framebuffer.image.is_none() || framebuffer.size != input.size
++                || framebuffer.format != input.format
++            {
++                T::FramebufferInterface::init(framebuffer, input.size, input.format)?;
++            }
++            if options.is_some_and(|options| options.clear_history) {
++                framebuffer.clear::<T::FramebufferInterface, true>();
+             }
+         }
+ 
+@@ -363,6 +372,12 @@
+             None,
+         )?;
+ 
++        if options.clear_history {
++            for framebuffer in &self.feedback_framebuffers[..passes.len()] {
++                framebuffer.clear::<T::FramebufferInterface, true>();
++            }
++        }
++
+         // Refresh inputs for feedback textures.
+         // Don't need to do this for outputs because they are yet to be bound.
+         for ((texture, fbo), pass) in self
+diff -ruN a/librashader-runtime-gl/src/filter_pass.rs b/librashader-runtime-gl/src/filter_pass.rs
+--- a/librashader-runtime-gl/src/filter_pass.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/filter_pass.rs	2026-09-08 19:44:09.181042561 +0400
+@@ -1,3 +1,4 @@
++use crate::gl::owned::GlObjects;
+ use glow::HasContext;
+ use librashader_reflect::reflect::ShaderReflection;
+ 
+@@ -33,6 +34,7 @@
+ pub(crate) struct FilterPass<T: GLInterface> {
+     pub reflection: ShaderReflection,
+     pub program: glow::Program,
++    pub _program_objects: GlObjects,
+     pub ubo_location: UniformLocation<Option<u32>>,
+     pub ubo_ring: Option<T::UboRing>,
+     pub(crate) uniform_storage: GlUniformStorage,
+diff -ruN a/librashader-runtime-gl/src/gl/gl3/compile_program.rs b/librashader-runtime-gl/src/gl/gl3/compile_program.rs
+--- a/librashader-runtime-gl/src/gl/gl3/compile_program.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/gl3/compile_program.rs	2026-09-08 19:43:12.257494419 +0400
+@@ -1,3 +1,5 @@
++use crate::gl::owned::GlObjects;
++use std::sync::Arc;
+ use crate::binding::UniformLocation;
+ use crate::error;
+ use crate::error::FilterChainError;
+@@ -13,18 +15,20 @@
+ 
+ impl CompileProgram for Gl3CompileProgram {
+     fn compile_program(
+-        ctx: &glow::Context,
++        ctx: &Arc<glow::Context>,
+         glsl: ShaderCompilerOutput<String, CrossGlslContext>,
+         _cache: bool,
+-    ) -> error::Result<(glow::Program, UniformLocation<Option<u32>>)> {
++    ) -> error::Result<(glow::Program, UniformLocation<Option<u32>>, GlObjects)> {
++        let mut objects = GlObjects::new(ctx);
++        let mut shaders = GlObjects::new(ctx);
+         let vertex_resources = glsl.context.artifact.vertex.shader_resources()?;
+ 
+         let (program, ubo_location) = unsafe {
+-            let vertex = util::gl_compile_shader(ctx, glow::VERTEX_SHADER, glsl.vertex.as_str())?;
+-            let fragment =
+-                util::gl_compile_shader(ctx, glow::FRAGMENT_SHADER, glsl.fragment.as_str())?;
++            let vertex = shaders.shader(util::gl_compile_shader(ctx, glow::VERTEX_SHADER, glsl.vertex.as_str())?);
++            let fragment = shaders.shader(
++                util::gl_compile_shader(ctx, glow::FRAGMENT_SHADER, glsl.fragment.as_str())?);
+ 
+-            let program = ctx.create_program().map_err(FilterChainError::GlError)?;
++            let program = objects.program(ctx.create_program().map_err(FilterChainError::GlError)?);
+             ctx.attach_shader(program, vertex);
+             ctx.attach_shader(program, fragment);
+ 
+@@ -43,8 +47,8 @@
+             }
+ 
+             ctx.link_program(program);
+-            ctx.delete_shader(vertex);
+-            ctx.delete_shader(fragment);
++            ctx.detach_shader(program, vertex);
++            ctx.detach_shader(program, fragment);
+ 
+             if !ctx.get_program_link_status(program) {
+                 return Err(FilterChainError::GLLinkError);
+@@ -69,6 +73,6 @@
+                 },
+             )
+         };
+-        Ok((program, ubo_location))
++        Ok((program, ubo_location, objects))
+     }
+ }
+diff -ruN a/librashader-runtime-gl/src/gl/gl3/draw_quad.rs b/librashader-runtime-gl/src/gl/gl3/draw_quad.rs
+--- a/librashader-runtime-gl/src/gl/gl3/draw_quad.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/gl3/draw_quad.rs	2026-09-08 19:42:39.670793765 +0400
+@@ -1,3 +1,5 @@
++use crate::gl::owned::GlObjects;
++use std::sync::Arc;
+ use crate::error;
+ use crate::error::FilterChainError;
+ use crate::gl::{DrawQuad, FINAL_VBO_DATA, OFFSCREEN_VBO_DATA};
+@@ -8,17 +10,19 @@
+ pub struct Gl3DrawQuad {
+     vbo: [glow::Buffer; 2],
+     vao: glow::VertexArray,
++    _objects: GlObjects,
+ }
+ 
+ impl DrawQuad for Gl3DrawQuad {
+-    fn new(ctx: &glow::Context) -> error::Result<Self> {
++    fn new(ctx: &Arc<glow::Context>) -> error::Result<Self> {
++        let mut objects = GlObjects::new(ctx);
+         let vbo;
+         let vao;
+ 
+         unsafe {
+             vbo = [
+-                ctx.create_buffer().map_err(FilterChainError::GlError)?,
+-                ctx.create_buffer().map_err(FilterChainError::GlError)?,
++                objects.buffer(ctx.create_buffer().map_err(FilterChainError::GlError)?),
++                objects.buffer(ctx.create_buffer().map_err(FilterChainError::GlError)?),
+             ];
+ 
+             ctx.bind_buffer(glow::ARRAY_BUFFER, Some(vbo[0]));
+@@ -38,12 +42,12 @@
+ 
+             ctx.bind_buffer(glow::ARRAY_BUFFER, None);
+ 
+-            vao = ctx
++            vao = objects.vertex_array(ctx
+                 .create_vertex_array()
+-                .map_err(FilterChainError::GlError)?;
++                .map_err(FilterChainError::GlError)?);
+         }
+ 
+-        Ok(Self { vbo, vao })
++        Ok(Self { vbo, vao, _objects: objects })
+     }
+ 
+     fn bind_vertices(&self, ctx: &glow::Context, quad_type: QuadType) {
+@@ -89,20 +93,3 @@
+     }
+ }
+ 
+-// impl Drop for Gl3DrawQuad {
+-//     fn drop(&mut self) {
+-//         unsafe {
+-//             if let Some(vbo) = self.vbo {
+-//                 glow::DeleteBuffers(1, &self.vbo[0]);
+-//             }
+-//
+-//             if self.vbo[1] != 0 {
+-//                 glow::DeleteBuffers(1, &self.vbo[1]);
+-//             }
+-//
+-//             if self.vao != 0 {
+-//                 glow::DeleteVertexArrays(1, &self.vao)
+-//             }
+-//         }
+-//     }
+-// }
+diff -ruN a/librashader-runtime-gl/src/gl/gl3/framebuffer.rs b/librashader-runtime-gl/src/gl/gl3/framebuffer.rs
+--- a/librashader-runtime-gl/src/gl/gl3/framebuffer.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/gl3/framebuffer.rs	2026-09-08 19:45:38.997329601 +0400
+@@ -4,7 +4,7 @@
+ use crate::gl::framebuffer::GLFramebuffer;
+ use crate::gl::FramebufferInterface;
+ use glow::HasContext;
+-use librashader_common::{ImageFormat, Size};
++use librashader_common::Size;
+ use librashader_runtime::scaling::MipmapSize;
+ use std::sync::Arc;
+ 
+@@ -78,6 +78,7 @@
+         };
+ 
+         if status != glow::FRAMEBUFFER_COMPLETE {
++            unsafe { ctx.delete_framebuffer(framebuffer); }
+             return Err(FilterChainError::FramebufferInit(status));
+         }
+ 
+@@ -100,8 +101,19 @@
+             }
+             fb.ctx.color_mask(true, true, true, true);
+             fb.ctx.clear_color(0.0, 0.0, 0.0, 0.0);
+-            fb.ctx.clear(glow::COLOR_BUFFER_BIT);
++            let levels = if REBIND { fb.mip_levels } else { 1 };
++            for level in 0..levels {
++                if REBIND {
++                    fb.ctx.framebuffer_texture_2d(
++                        glow::FRAMEBUFFER, glow::COLOR_ATTACHMENT0,
++                        glow::TEXTURE_2D, fb.image, level as i32);
++                }
++                fb.ctx.clear(glow::COLOR_BUFFER_BIT);
++            }
+             if REBIND {
++                fb.ctx.framebuffer_texture_2d(
++                    glow::FRAMEBUFFER, glow::COLOR_ATTACHMENT0,
++                    glow::TEXTURE_2D, fb.image, 0);
+                 fb.ctx.bind_framebuffer(glow::FRAMEBUFFER, None);
+             }
+         }
+@@ -174,6 +186,7 @@
+                 fb.image,
+                 0,
+             );
++            fb.ctx.draw_buffers(&[glow::COLOR_ATTACHMENT0]);
+ 
+             fb.ctx.bind_framebuffer(glow::FRAMEBUFFER, None);
+         }
+@@ -191,7 +204,7 @@
+             fb.ctx.bind_framebuffer(glow::FRAMEBUFFER, Some(fb.fbo));
+ 
+             // reset the framebuffer image
+-            if let Some(image) = fb.image {
++            if let Some(image) = fb.image.take() {
+                 fb.ctx.framebuffer_texture_2d(
+                     glow::FRAMEBUFFER,
+                     glow::COLOR_ATTACHMENT0,
+@@ -239,54 +252,10 @@
+ 
+             let status = fb.ctx.check_framebuffer_status(glow::FRAMEBUFFER);
+             if status != glow::FRAMEBUFFER_COMPLETE {
+-                match status {
+-                    glow::FRAMEBUFFER_UNSUPPORTED => {
+-                        fb.ctx.framebuffer_texture_2d(
+-                            glow::FRAMEBUFFER,
+-                            glow::COLOR_ATTACHMENT0,
+-                            glow::TEXTURE_2D,
+-                            None,
+-                            0,
+-                        );
+-
+-                        if let Some(image) = fb.image {
+-                            fb.ctx.delete_texture(image);
+-                        }
+-
+-                        fb.image =
+-                            Some(fb.ctx.create_texture().map_err(FilterChainError::GlError)?);
+-                        fb.ctx.bind_texture(glow::TEXTURE_2D, fb.image);
+-
+-                        fb.mip_levels = size.calculate_miplevels();
+-                        if fb.mip_levels > fb.max_levels {
+-                            fb.mip_levels = fb.max_levels;
+-                        }
+-                        if fb.mip_levels == 0 {
+-                            fb.mip_levels = 1;
+-                        }
+-
+-                        fb.ctx.tex_storage_2d(
+-                            glow::TEXTURE_2D,
+-                            fb.mip_levels as i32,
+-                            ImageFormat::R8G8B8A8Unorm.into(),
+-                            size.width as i32,
+-                            size.height as i32,
+-                        );
+-
+-                        fb.ctx.framebuffer_texture_2d(
+-                            glow::FRAMEBUFFER,
+-                            glow::COLOR_ATTACHMENT0,
+-                            glow::TEXTURE_2D,
+-                            fb.image,
+-                            0,
+-                        );
+-
+-                        // fb.init =
+-                        //     glow::CheckFramebufferStatus(glow::FRAMEBUFFER) == glow::FRAMEBUFFER_COMPLETE;
+-                    }
+-                    _ => return Err(FilterChainError::FramebufferInit(status)),
+-                }
++                return Err(FilterChainError::FramebufferInit(status));
+             }
++            // New feedback and history images must not expose undefined pixels.
++            Self::clear::<true>(fb);
+ 
+             fb.ctx.bind_framebuffer(glow::FRAMEBUFFER, None);
+             fb.ctx.bind_texture(glow::TEXTURE_2D, None);
+diff -ruN a/librashader-runtime-gl/src/gl/gl3/lut_load.rs b/librashader-runtime-gl/src/gl/gl3/lut_load.rs
+--- a/librashader-runtime-gl/src/gl/gl3/lut_load.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/gl3/lut_load.rs	2026-09-08 19:42:39.675793714 +0400
+@@ -1,3 +1,5 @@
++use crate::gl::owned::GlObjects;
++use std::sync::Arc;
+ use crate::error::{FilterChainError, Result};
+ use crate::framebuffer::GLImage;
+ use crate::gl::LoadLut;
+@@ -13,9 +15,10 @@
+ pub struct Gl3LutLoad;
+ impl LoadLut for Gl3LutLoad {
+     fn load_luts(
+-        context: &glow::Context,
++        context: &Arc<glow::Context>,
+         textures: Vec<TextureResource>,
+-    ) -> Result<FastHashMap<usize, InputTexture>> {
++    ) -> Result<(FastHashMap<usize, InputTexture>, GlObjects)> {
++        let mut objects = GlObjects::new(context);
+         let mut luts = FastHashMap::default();
+         let pixel_unpack = unsafe { context.get_parameter_i32(glow::PIXEL_UNPACK_BUFFER_BINDING) };
+ 
+@@ -32,9 +35,9 @@
+             };
+ 
+             let handle = unsafe {
+-                let handle = context
++                let handle = objects.texture(context
+                     .create_texture()
+-                    .map_err(FilterChainError::GlError)?;
++                    .map_err(FilterChainError::GlError)?);
+ 
+                 context.bind_texture(glow::TEXTURE_2D, Some(handle));
+                 context.tex_storage_2d(
+@@ -93,6 +96,6 @@
+ 
+             context.bind_buffer(glow::PIXEL_UNPACK_BUFFER, pixel_unpack);
+         };
+-        Ok(luts)
++        Ok((luts, objects))
+     }
+ }
+diff -ruN a/librashader-runtime-gl/src/gl/gl3/ubo_ring.rs b/librashader-runtime-gl/src/gl/gl3/ubo_ring.rs
+--- a/librashader-runtime-gl/src/gl/gl3/ubo_ring.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/gl3/ubo_ring.rs	2026-09-08 19:42:39.672793744 +0400
+@@ -1,3 +1,5 @@
++use crate::gl::owned::GlObjects;
++use std::sync::Arc;
+ use crate::binding::UniformLocation;
+ use crate::error;
+ use crate::error::FilterChainError;
+@@ -10,12 +12,15 @@
+ 
+ pub struct Gl3UboRing<const SIZE: usize> {
+     ring: InlineRingBuffer<glow::Buffer, SIZE>,
++    _objects: GlObjects,
+ }
+ 
+ impl<const SIZE: usize> UboRing<SIZE> for Gl3UboRing<SIZE> {
+-    fn new(ctx: &glow::Context, buffer_size: u32) -> error::Result<Self> {
++    fn new(ctx: &Arc<glow::Context>, buffer_size: u32) -> error::Result<Self> {
++        let mut objects = GlObjects::new(ctx);
+         let items: [glow::Buffer; SIZE] = array_init::try_array_init(|_| unsafe {
+             ctx.create_buffer().map(|buffer| {
++                let buffer = objects.buffer(buffer);
+                 ctx.bind_buffer(glow::UNIFORM_BUFFER, Some(buffer));
+                 ctx.buffer_data_size(glow::UNIFORM_BUFFER, buffer_size as i32, glow::STREAM_DRAW);
+                 ctx.bind_buffer(glow::UNIFORM_BUFFER, None);
+@@ -25,7 +30,7 @@
+         .map_err(FilterChainError::GlError)?;
+ 
+         let ring: InlineRingBuffer<glow::Buffer, SIZE> = InlineRingBuffer::from_array(items);
+-        Ok(Gl3UboRing { ring })
++        Ok(Gl3UboRing { ring, _objects: objects })
+     }
+ 
+     fn bind_for_frame(
+diff -ruN a/librashader-runtime-gl/src/gl/gl46/compile_program.rs b/librashader-runtime-gl/src/gl/gl46/compile_program.rs
+--- a/librashader-runtime-gl/src/gl/gl46/compile_program.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/gl46/compile_program.rs	2026-09-08 19:43:12.257494419 +0400
+@@ -1,3 +1,5 @@
++use crate::gl::owned::GlObjects;
++use std::sync::Arc;
+ use crate::binding::UniformLocation;
+ use crate::error::FilterChainError;
+ use crate::gl::CompileProgram;
+@@ -42,24 +44,26 @@
+ 
+ impl CompileProgram for Gl4CompileProgram {
+     fn compile_program(
+-        context: &glow::Context,
++        context: &Arc<glow::Context>,
+         glsl: ShaderCompilerOutput<String, CrossGlslContext>,
+         cache: bool,
+-    ) -> crate::error::Result<(glow::Program, UniformLocation<Option<u32>>)> {
++    ) -> crate::error::Result<(glow::Program, UniformLocation<Option<u32>>, GlObjects)> {
+         fn compile_shader(
+-            context: &glow::Context,
++            context: &Arc<glow::Context>,
+             resources: &CrossGlslContext,
+             vertex: &str,
+             fragment: &str,
+-        ) -> crate::error::Result<glow::Program> {
++        ) -> crate::error::Result<(glow::Program, GlObjects)> {
++            let mut objects = GlObjects::new(context);
++            let mut shaders = GlObjects::new(context);
+             unsafe {
+                 let vertex_resources = resources.artifact.vertex.shader_resources()?;
+-                let vertex = util::gl_compile_shader(context, glow::VERTEX_SHADER, vertex)?;
+-                let fragment = util::gl_compile_shader(context, glow::FRAGMENT_SHADER, fragment)?;
++                let vertex = shaders.shader(util::gl_compile_shader(context, glow::VERTEX_SHADER, vertex)?);
++                let fragment = shaders.shader(util::gl_compile_shader(context, glow::FRAGMENT_SHADER, fragment)?);
+ 
+-                let program = context
++                let program = objects.program(context
+                     .create_program()
+-                    .map_err(|_| FilterChainError::GlProgramError)?;
++                    .map_err(|_| FilterChainError::GlProgramError)?);
+ 
+                 context.attach_shader(program, vertex);
+                 context.attach_shader(program, fragment);
+@@ -78,36 +82,35 @@
+                 }
+                 context.program_binary_retrievable_hint(program, true);
+                 context.link_program(program);
+-                context.delete_shader(vertex);
+-                context.delete_shader(fragment);
++                context.detach_shader(program, vertex);
++                context.detach_shader(program, fragment);
+ 
+                 if !context.get_program_link_status(program) {
+                     return Err(FilterChainError::GLLinkError);
+                 }
+-                Ok(program)
++                Ok((program, objects))
+             }
+         }
+ 
+-        let program = librashader_cache::cache_shader_object(
++        let (program, objects) = librashader_cache::cache_shader_object(
+             "opengl4",
+             &[glsl.vertex.as_str(), glsl.fragment.as_str()],
+             |&[vertex, fragment]| unsafe {
+-                let program = compile_shader(context, &glsl.context, vertex, fragment)?;
++                let (program, _objects) = compile_shader(context, &glsl.context, vertex, fragment)?;
+                 let program_binary = context.get_program_binary(program);
+-                context.delete_program(program);
+                 Ok(GlProgramBinary(program_binary))
+             },
+             |binary| unsafe {
+-                let program = context
++                let mut objects = GlObjects::new(context);
++                let program = objects.program(context
+                     .create_program()
+-                    .map_err(|_| FilterChainError::GlProgramError)?;
++                    .map_err(|_| FilterChainError::GlProgramError)?);
+ 
+                 if let Some(binary) = &binary.0 {
+                     context.program_binary(program, binary);
+                 }
+ 
+                 if !context.get_program_link_status(program) {
+-                    context.delete_program(program);
+                     return compile_shader(
+                         context,
+                         &glsl.context,
+@@ -116,7 +119,7 @@
+                     );
+                 }
+ 
+-                return Ok(program);
++                return Ok((program, objects));
+             },
+             !cache,
+         )?;
+@@ -135,6 +138,6 @@
+             }
+         };
+ 
+-        Ok((program, ubo_location))
++        Ok((program, ubo_location, objects))
+     }
+ }
+diff -ruN a/librashader-runtime-gl/src/gl/gl46/draw_quad.rs b/librashader-runtime-gl/src/gl/gl46/draw_quad.rs
+--- a/librashader-runtime-gl/src/gl/gl46/draw_quad.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/gl46/draw_quad.rs	2026-09-08 19:42:39.661793858 +0400
+@@ -1,3 +1,5 @@
++use crate::gl::owned::GlObjects;
++use std::sync::Arc;
+ use crate::error;
+ use crate::error::FilterChainError;
+ use crate::gl::DrawQuad;
+@@ -9,21 +11,23 @@
+ pub struct Gl46DrawQuad {
+     vbo: [glow::Buffer; 2],
+     vao: glow::VertexArray,
++    _objects: GlObjects,
+ }
+ 
+ impl DrawQuad for Gl46DrawQuad {
+-    fn new(context: &glow::Context) -> error::Result<Self> {
++    fn new(context: &Arc<glow::Context>) -> error::Result<Self> {
++        let mut objects = GlObjects::new(context);
+         let vbo;
+         let vao;
+ 
+         unsafe {
+             vbo = [
+-                context
++                objects.buffer(context
+                     .create_named_buffer()
+-                    .map_err(FilterChainError::GlError)?,
+-                context
++                    .map_err(FilterChainError::GlError)?),
++                objects.buffer(context
+                     .create_named_buffer()
+-                    .map_err(FilterChainError::GlError)?,
++                    .map_err(FilterChainError::GlError)?),
+             ];
+ 
+             context.named_buffer_data_u8_slice(
+@@ -38,9 +42,9 @@
+                 glow::STATIC_DRAW,
+             );
+ 
+-            vao = context
++            vao = objects.vertex_array(context
+                 .create_named_vertex_array()
+-                .map_err(FilterChainError::GlError)?;
++                .map_err(FilterChainError::GlError)?);
+             context.enable_vertex_array_attrib(vao, 0);
+             context.enable_vertex_array_attrib(vao, 1);
+ 
+@@ -65,7 +69,7 @@
+             context.vertex_array_attrib_binding_f32(vao, 1, 0);
+         }
+ 
+-        Ok(Self { vbo, vao })
++        Ok(Self { vbo, vao, _objects: objects })
+     }
+ 
+     fn bind_vertices(&self, context: &glow::Context, quad_type: QuadType) {
+diff -ruN a/librashader-runtime-gl/src/gl/gl46/framebuffer.rs b/librashader-runtime-gl/src/gl/gl46/framebuffer.rs
+--- a/librashader-runtime-gl/src/gl/gl46/framebuffer.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/gl46/framebuffer.rs	2026-09-08 19:45:38.996329609 +0400
+@@ -4,7 +4,7 @@
+ use crate::gl::framebuffer::GLFramebuffer;
+ use crate::gl::FramebufferInterface;
+ use glow::HasContext;
+-use librashader_common::{ImageFormat, Size};
++use librashader_common::Size;
+ use librashader_runtime::scaling::MipmapSize;
+ use std::sync::Arc;
+ 
+@@ -68,6 +68,7 @@
+         };
+ 
+         if status != glow::FRAMEBUFFER_COMPLETE {
++            unsafe { ctx.delete_framebuffer(framebuffer); }
+             return Err(FilterChainError::FramebufferInit(status));
+         }
+ 
+@@ -85,12 +86,23 @@
+ 
+     fn clear<const REBIND: bool>(fb: &GLFramebuffer) {
+         unsafe {
+-            fb.ctx.clear_named_framebuffer_f32_slice(
+-                Some(fb.fbo),
+-                glow::COLOR,
+-                0,
+-                &[0.0f32, 0.0, 0.0, 0.0],
+-            );
++            let levels = if REBIND { fb.mip_levels } else { 1 };
++            for level in 0..levels {
++                if REBIND {
++                    fb.ctx.named_framebuffer_texture(
++                        Some(fb.fbo), glow::COLOR_ATTACHMENT0, fb.image, level as i32);
++                }
++                fb.ctx.clear_named_framebuffer_f32_slice(
++                    Some(fb.fbo),
++                    glow::COLOR,
++                    0,
++                    &[0.0f32, 0.0, 0.0, 0.0],
++                );
++            }
++            if REBIND {
++                fb.ctx.named_framebuffer_texture(
++                    Some(fb.fbo), glow::COLOR_ATTACHMENT0, fb.image, 0);
++            }
+         }
+     }
+     fn copy_from(fb: &mut GLFramebuffer, image: &GLImage) -> Result<()> {
+@@ -134,6 +146,14 @@
+                 glow::COLOR_BUFFER_BIT,
+                 glow::NEAREST,
+             );
++            // Restore the owned attachment and draw buffer. A later history
++            // reset must never clear the previously attached caller texture.
++            fb.ctx.named_framebuffer_texture(
++                Some(fb.fbo), glow::COLOR_ATTACHMENT0, fb.image, 0);
++            fb.ctx.named_framebuffer_texture(
++                Some(fb.fbo), glow::COLOR_ATTACHMENT1, None, 0);
++            fb.ctx.named_framebuffer_read_buffer(Some(fb.fbo), glow::COLOR_ATTACHMENT0);
++            fb.ctx.named_framebuffer_draw_buffer(Some(fb.fbo), glow::COLOR_ATTACHMENT0);
+         }
+ 
+         Ok(())
+@@ -147,7 +167,7 @@
+ 
+         unsafe {
+             // reset the framebuffer image
+-            if let Some(image) = fb.image {
++            if let Some(image) = fb.image.take() {
+                 fb.ctx
+                     .named_framebuffer_texture(Some(fb.fbo), glow::COLOR_ATTACHMENT0, None, 0);
+                 fb.ctx.delete_texture(image);
+@@ -190,49 +210,10 @@
+                 .ctx
+                 .check_named_framebuffer_status(Some(fb.fbo), glow::FRAMEBUFFER);
+             if status != glow::FRAMEBUFFER_COMPLETE {
+-                match status {
+-                    glow::FRAMEBUFFER_UNSUPPORTED => {
+-                        fb.ctx.named_framebuffer_texture(
+-                            Some(fb.fbo),
+-                            glow::COLOR_ATTACHMENT0,
+-                            None,
+-                            0,
+-                        );
+-                        fb.ctx.delete_texture(image);
+-
+-                        let image = fb
+-                            .ctx
+-                            .create_named_texture(glow::TEXTURE_2D)
+-                            .map_err(FilterChainError::GlError)?;
+-
+-                        fb.mip_levels = size.calculate_miplevels();
+-                        if fb.mip_levels > fb.max_levels {
+-                            fb.mip_levels = fb.max_levels;
+-                        }
+-                        if fb.mip_levels == 0 {
+-                            fb.mip_levels = 1;
+-                        }
+-
+-                        fb.ctx.texture_storage_2d(
+-                            image,
+-                            fb.mip_levels as i32,
+-                            ImageFormat::R8G8B8A8Unorm.into(),
+-                            size.width as i32,
+-                            size.height as i32,
+-                        );
+-
+-                        fb.image = Some(image);
+-
+-                        fb.ctx.named_framebuffer_texture(
+-                            Some(fb.fbo),
+-                            glow::COLOR_ATTACHMENT0,
+-                            fb.image,
+-                            0,
+-                        );
+-                    }
+-                    _ => return Err(FilterChainError::FramebufferInit(status)),
+-                }
++                return Err(FilterChainError::FramebufferInit(status));
+             }
++            // New feedback and history images must not expose undefined pixels.
++            Self::clear::<true>(fb);
+         }
+         Ok(())
+     }
+diff -ruN a/librashader-runtime-gl/src/gl/gl46/lut_load.rs b/librashader-runtime-gl/src/gl/gl46/lut_load.rs
+--- a/librashader-runtime-gl/src/gl/gl46/lut_load.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/gl46/lut_load.rs	2026-09-08 19:42:39.677793693 +0400
+@@ -1,3 +1,5 @@
++use crate::gl::owned::GlObjects;
++use std::sync::Arc;
+ use crate::error::{FilterChainError, Result};
+ use crate::framebuffer::GLImage;
+ use crate::gl::LoadLut;
+@@ -12,9 +14,10 @@
+ pub struct Gl46LutLoad;
+ impl LoadLut for Gl46LutLoad {
+     fn load_luts(
+-        context: &glow::Context,
++        context: &Arc<glow::Context>,
+         textures: Vec<TextureResource>,
+-    ) -> Result<FastHashMap<usize, InputTexture>> {
++    ) -> Result<(FastHashMap<usize, InputTexture>, GlObjects)> {
++        let mut objects = GlObjects::new(context);
+         let mut luts = FastHashMap::default();
+ 
+         // don't need this for texture DSA api.
+@@ -32,9 +35,9 @@
+             };
+ 
+             let handle = unsafe {
+-                let handle = context
++                let handle = objects.texture(context
+                     .create_named_texture(glow::TEXTURE_2D)
+-                    .map_err(FilterChainError::GlError)?;
++                    .map_err(FilterChainError::GlError)?);
+ 
+                 context.texture_storage_2d(
+                     handle,
+@@ -85,6 +88,6 @@
+         // unsafe {
+         //     context.bind_buffer(glow::PIXEL_UNPACK_BUFFER, pixel_unpack);
+         // };
+-        Ok(luts)
++        Ok((luts, objects))
+     }
+ }
+diff -ruN a/librashader-runtime-gl/src/gl/gl46/ubo_ring.rs b/librashader-runtime-gl/src/gl/gl46/ubo_ring.rs
+--- a/librashader-runtime-gl/src/gl/gl46/ubo_ring.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/gl46/ubo_ring.rs	2026-09-08 19:42:39.673793735 +0400
+@@ -1,3 +1,5 @@
++use crate::gl::owned::GlObjects;
++use std::sync::Arc;
+ use crate::binding::UniformLocation;
+ use crate::error;
+ use crate::error::FilterChainError;
+@@ -10,12 +12,15 @@
+ 
+ pub struct Gl46UboRing<const SIZE: usize> {
+     ring: InlineRingBuffer<glow::Buffer, SIZE>,
++    _objects: GlObjects,
+ }
+ 
+ impl<const SIZE: usize> UboRing<SIZE> for Gl46UboRing<SIZE> {
+-    fn new(context: &glow::Context, buffer_size: u32) -> error::Result<Self> {
++    fn new(context: &Arc<glow::Context>, buffer_size: u32) -> error::Result<Self> {
++        let mut objects = GlObjects::new(context);
+         let items: [glow::Buffer; SIZE] = array_init::try_array_init(|_| unsafe {
+             context.create_named_buffer().map(|buffer| {
++                let buffer = objects.buffer(buffer);
+                 context.named_buffer_data_size(buffer, buffer_size as i32, glow::STREAM_DRAW);
+                 buffer
+             })
+@@ -23,7 +28,7 @@
+         .map_err(FilterChainError::GlError)?;
+ 
+         let ring: InlineRingBuffer<glow::Buffer, SIZE> = InlineRingBuffer::from_array(items);
+-        Ok(Gl46UboRing { ring })
++        Ok(Gl46UboRing { ring, _objects: objects })
+     }
+ 
+     fn bind_for_frame(
+diff -ruN a/librashader-runtime-gl/src/gl/mod.rs b/librashader-runtime-gl/src/gl/mod.rs
+--- a/librashader-runtime-gl/src/gl/mod.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/mod.rs	2026-09-08 19:42:39.659793878 +0400
+@@ -1,6 +1,8 @@
+ mod framebuffer;
+ pub(crate) mod gl3;
+ pub(crate) mod gl46;
++pub(crate) mod owned;
++use owned::GlObjects;
+ 
+ use crate::binding::UniformLocation;
+ use crate::error::Result;
+@@ -59,21 +61,21 @@
+ 
+ pub(crate) trait LoadLut {
+     fn load_luts(
+-        context: &glow::Context,
++        context: &Arc<glow::Context>,
+         textures: Vec<TextureResource>,
+-    ) -> Result<FastHashMap<usize, InputTexture>>;
++    ) -> Result<(FastHashMap<usize, InputTexture>, GlObjects)>;
+ }
+ 
+ pub(crate) trait CompileProgram {
+     fn compile_program(
+-        context: &glow::Context,
++        context: &Arc<glow::Context>,
+         shader: ShaderCompilerOutput<String, CrossGlslContext>,
+         cache: bool,
+-    ) -> Result<(glow::Program, UniformLocation<Option<u32>>)>;
++    ) -> Result<(glow::Program, UniformLocation<Option<u32>>, GlObjects)>;
+ }
+ 
+ pub(crate) trait DrawQuad {
+-    fn new(context: &glow::Context) -> Result<Self>
++    fn new(context: &Arc<glow::Context>) -> Result<Self>
+     where
+         Self: Sized;
+     fn bind_vertices(&self, context: &glow::Context, quad_type: QuadType);
+@@ -81,7 +83,7 @@
+ }
+ 
+ pub(crate) trait UboRing<const SIZE: usize> {
+-    fn new(context: &glow::Context, buffer_size: u32) -> Result<Self>
++    fn new(context: &Arc<glow::Context>, buffer_size: u32) -> Result<Self>
+     where
+         Self: Sized;
+     fn bind_for_frame(
+diff -ruN a/librashader-runtime-gl/src/gl/owned.rs b/librashader-runtime-gl/src/gl/owned.rs
+--- a/librashader-runtime-gl/src/gl/owned.rs	1970-01-01 04:00:00.000000000 +0400
++++ b/librashader-runtime-gl/src/gl/owned.rs	2026-09-08 19:41:51.998572586 +0400
+@@ -0,0 +1,58 @@
++use glow::HasContext;
++use std::sync::Arc;
++
++// Own allocations from one constructor, including its partially initialized
++// error paths. Raw handles in rendering structs are non-owning views. The
++// creating GL context must be current when this owner is dropped.
++pub(crate) struct GlObjects {
++    context: Arc<glow::Context>,
++    objects: Vec<GlObject>,
++}
++
++enum GlObject {
++    Buffer(glow::Buffer),
++    VertexArray(glow::VertexArray),
++    Texture(glow::Texture),
++    Sampler(glow::Sampler),
++    Program(glow::Program),
++    Shader(glow::Shader),
++}
++
++macro_rules! own {
++    ($method:ident, $kind:ident, $ty:ty) => {
++        pub(crate) fn $method(&mut self, handle: $ty) -> $ty {
++            self.objects.push(GlObject::$kind(handle));
++            handle
++        }
++    };
++}
++
++impl GlObjects {
++    pub(crate) fn new(context: &Arc<glow::Context>) -> Self {
++        Self { context: Arc::clone(context), objects: Vec::new() }
++    }
++
++    own!(buffer, Buffer, glow::Buffer);
++    own!(vertex_array, VertexArray, glow::VertexArray);
++    own!(texture, Texture, glow::Texture);
++    own!(sampler, Sampler, glow::Sampler);
++    own!(program, Program, glow::Program);
++    own!(shader, Shader, glow::Shader);
++}
++
++impl Drop for GlObjects {
++    fn drop(&mut self) {
++        for object in self.objects.drain(..).rev() {
++            unsafe {
++                match object {
++                    GlObject::Buffer(handle) => self.context.delete_buffer(handle),
++                    GlObject::VertexArray(handle) => self.context.delete_vertex_array(handle),
++                    GlObject::Texture(handle) => self.context.delete_texture(handle),
++                    GlObject::Sampler(handle) => self.context.delete_sampler(handle),
++                    GlObject::Program(handle) => self.context.delete_program(handle),
++                    GlObject::Shader(handle) => self.context.delete_shader(handle),
++                }
++            }
++        }
++    }
++}
+diff -ruN a/librashader-runtime-gl/src/samplers.rs b/librashader-runtime-gl/src/samplers.rs
+--- a/librashader-runtime-gl/src/samplers.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/samplers.rs	2026-09-08 19:42:39.674793724 +0400
+@@ -1,3 +1,5 @@
++use crate::gl::owned::GlObjects;
++use std::sync::Arc;
+ use crate::error;
+ use crate::error::FilterChainError;
+ use glow::HasContext;
+@@ -7,6 +9,7 @@
+ pub struct SamplerSet {
+     // todo: may need to deal with differences in mip filter.
+     samplers: FastHashMap<(WrapMode, FilterMode, FilterMode), glow::Sampler>,
++    _objects: GlObjects,
+ }
+ 
+ impl SamplerSet {
+@@ -41,7 +44,8 @@
+         }
+     }
+ 
+-    pub fn new(context: &glow::Context) -> error::Result<SamplerSet> {
++    pub fn new(context: &Arc<glow::Context>) -> error::Result<SamplerSet> {
++        let mut objects = GlObjects::new(context);
+         let mut samplers = FastHashMap::default();
+         let wrap_modes = &[
+             WrapMode::ClampToBorder,
+@@ -53,9 +57,9 @@
+             for filter_mode in &[FilterMode::Linear, FilterMode::Nearest] {
+                 for mip_filter in &[FilterMode::Linear, FilterMode::Nearest] {
+                     unsafe {
+-                        let sampler = context
++                        let sampler = objects.sampler(context
+                             .create_sampler()
+-                            .map_err(|_| FilterChainError::GlSamplerError)?;
++                            .map_err(|_| FilterChainError::GlSamplerError)?);
+ 
+                         let mut gl_wrap_mode = *wrap_mode;
+                         if context.version().is_embedded && gl_wrap_mode == WrapMode::ClampToBorder
+@@ -79,6 +83,6 @@
+ 
+         // assert all samplers were created.
+         assert_eq!(samplers.len(), wrap_modes.len() * 2 * 2);
+-        Ok(SamplerSet { samplers })
++        Ok(SamplerSet { samplers, _objects: objects })
+     }
+ }
+diff -ruN a/librashader-runtime-gl/src/util.rs b/librashader-runtime-gl/src/util.rs
+--- a/librashader-runtime-gl/src/util.rs	2026-01-25 19:05:49.000000000 +0400
++++ b/librashader-runtime-gl/src/util.rs	2026-09-08 19:43:12.256494427 +0400
+@@ -19,6 +19,7 @@
+         let compile_status = context.get_shader_compile_status(shader);
+ 
+         if !compile_status {
++            context.delete_shader(shader);
+             Err(FilterChainError::GlCompileError)
+         } else {
+             Ok(shader)
+diff --git a/librashader-runtime-gl/src/gl/gl3/texture_bind.rs b/librashader-runtime-gl/src/gl/gl3/texture_bind.rs
+--- a/librashader-runtime-gl/src/gl/gl3/texture_bind.rs
++++ b/librashader-runtime-gl/src/gl/gl3/texture_bind.rs
+@@ -3,6 +3,7 @@
+ use crate::texture::InputTexture;
+ use glow::HasContext;
+ use librashader_reflect::reflect::semantics::TextureBinding;
++use librashader_runtime::scaling::MipmapSize;
+ 
+ pub struct Gl3BindTexture;
+ 
+@@ -27,6 +28,13 @@ impl BindTexture for Gl3BindTexture {
+     fn gen_mipmaps(ctx: &glow::Context, texture: &InputTexture) {
+         unsafe {
+             ctx.bind_texture(glow::TEXTURE_2D, texture.image.handle);
++            // The caller may allocate immutable mip storage but expose only
++            // the live base level until a pass requests mipmap generation.
++            ctx.tex_parameter_i32(
++                glow::TEXTURE_2D,
++                glow::TEXTURE_MAX_LEVEL,
++                (texture.image.size.calculate_miplevels() - 1) as i32,
++            );
+             ctx.generate_mipmap(glow::TEXTURE_2D);
+             ctx.bind_texture(glow::TEXTURE_2D, None);
+         }
+diff --git a/librashader-runtime-gl/src/gl/gl46/texture_bind.rs b/librashader-runtime-gl/src/gl/gl46/texture_bind.rs
+--- a/librashader-runtime-gl/src/gl/gl46/texture_bind.rs
++++ b/librashader-runtime-gl/src/gl/gl46/texture_bind.rs
+@@ -3,6 +3,7 @@
+ use crate::texture::InputTexture;
+ use glow::HasContext;
+ use librashader_reflect::reflect::semantics::TextureBinding;
++use librashader_runtime::scaling::MipmapSize;
+ 
+ pub struct Gl46BindTexture;
+ 
+@@ -24,8 +25,16 @@ impl BindTexture for Gl46BindTexture {
+     }
+ 
+     fn gen_mipmaps(context: &glow::Context, texture: &InputTexture) {
+-        if let Some(texture) = texture.image.handle {
+-            unsafe { context.generate_texture_mipmap(texture) }
++        if let Some(handle) = texture.image.handle {
++            unsafe {
++                // Expose allocated mip storage only when generating its data.
++                context.texture_parameter_i32(
++                    handle,
++                    glow::TEXTURE_MAX_LEVEL,
++                    (texture.image.size.calculate_miplevels() - 1) as i32,
++                );
++                context.generate_texture_mipmap(handle);
++            }
+         }
+     }
+ }

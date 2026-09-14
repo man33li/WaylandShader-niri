@@ -1,0 +1,13 @@
+shaders = 2
+shader0 = temporal.slang
+alias0 = PREPASS
+scale_type0 = source
+scale0 = 0.5
+float_framebuffer0 = true
+mipmap_input0 = true
+shader1 = finish.slang
+scale_type1 = viewport
+mipmap_input1 = true
+textures = LOOKUP
+LOOKUP = lookup.png
+LOOKUP_linear = false

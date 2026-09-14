@@ -11,7 +11,7 @@ description = "A scrollable-tiling Wayland compositor"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2021"
-repository = "https://github.com/niri-wm/niri"
+repository = "https://github.com/man33li/WaylandShader-niri"
 rust-version = "1.87"
 
 [workspace.dependencies]
@@ -80,6 +80,7 @@ niri-ipc = { version = "26.4.0", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5"
 pango = { version = "0.21.5", features = ["v1_44"] }
 pangocairo = "0.21.5"
+parking_lot = "0.12"
 pipewire = { version = "0.10", optional = true, features = ["v0_3_33"] }
 png = "0.18.1"
 portable-atomic = "1"
@@ -161,28 +162,3 @@ debug = false
 [profile.dev.package]
 insta.opt-level = 3
 similar.opt-level = 3
-
-[package.metadata.generate-rpm]
-version = "26.04"
-assets = [
-    { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
-    { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },
-    { source = "resources/niri.desktop", dest = "/usr/share/wayland-sessions/", mode = "644" },
-    { source = "resources/niri-portals.conf", dest = "/usr/share/xdg-desktop-portal/", mode = "644" },
-    { source = "resources/niri.service", dest = "/usr/lib/systemd/user/", mode = "644" },
-    { source = "resources/niri-shutdown.target", dest = "/usr/lib/systemd/user/", mode = "644" },
-]
-[package.metadata.generate-rpm.requires]
-alacritty = "*"
-fuzzel = "*"
-
-[package.metadata.deb]
-depends = "alacritty, fuzzel"
-assets = [
-    ["target/release/niri", "usr/bin/", "755"],
-    ["resources/niri-session", "usr/bin/", "755"],
-    ["resources/niri.desktop", "/usr/share/wayland-sessions/", "644"],
-    ["resources/niri-portals.conf", "/usr/share/xdg-desktop-portal/", "644"],
-    ["resources/niri.service", "/usr/lib/systemd/user/", "644"],
-    ["resources/niri-shutdown.target", "/usr/lib/systemd/user/", "644"],
-]

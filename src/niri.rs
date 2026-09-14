@@ -201,6 +201,7 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
 
 pub struct Niri {
+    pub waylandshader: crate::waylandshader::Manager,
     pub config: Rc<RefCell<Config>>,
 
     /// Output config from the config file.
@@ -721,6 +722,13 @@ pub struct State {
     pub niri: Niri,
 }
 
+impl Drop for State {
+    fn drop(&mut self) {
+        // The backend (and its EGL displays) is the first field to be dropped.
+        self.niri.waylandshader.release_all();
+    }
+}
+
 impl State {
     pub fn new(
         config: Config,
@@ -763,6 +771,8 @@ impl State {
         backend.init(&mut niri);
 
         let mut state = Self { backend, niri };
+        #[cfg(not(test))]
+        crate::waylandshader::control::start(&mut state);
 
         // Load the xkb_file config option if set by the user.
         state.load_xkb_file();
@@ -2626,6 +2636,7 @@ impl Niri {
 
         drop(config_);
         let mut niri = Self {
+            waylandshader: crate::waylandshader::Manager::new(),
             config,
             config_file_output_config,
             config_file_watcher: None,
@@ -3000,6 +3011,7 @@ impl Niri {
         );
 
         self.layout.add_output(output.clone(), layout_config);
+        self.waylandshader.add_output(&output);
 
         let lock_render_state = if self.is_locked() {
             // We haven't rendered anything yet so it's as good as locked.
@@ -3048,6 +3060,7 @@ impl Niri {
     }
 
     pub fn remove_output(&mut self, output: &Output) {
+        self.waylandshader.remove_output(output);
         for layer in layer_map_for_output(output).layers() {
             layer.layer_surface().send_close();
         }
@@ -6374,6 +6387,7 @@ impl Niri {
     }
 
     pub fn lock(&mut self, confirmation: SessionLocker) {
+        self.waylandshader.invalidate_history();
         // Check if another client is in the process of locking.
         if matches!(
             self.lock_state,
@@ -6490,6 +6504,7 @@ impl Niri {
     }
 
     pub fn unlock(&mut self) {
+        self.waylandshader.invalidate_history();
         info!("unlocking session");
 
         let prev = mem::take(&mut self.lock_state);
@@ -7059,6 +7074,7 @@ niri_render_elements! {
 
 niri_render_elements! {
     OutputRenderElements<R> => {
+        OutputShader = crate::waylandshader::ShaderElement,
         Monitor = MonitorRenderElement<R>,
         RescaledTile = RescaleRenderElement<TileRenderElement<R>>,
         LayerSurface = LayerSurfaceRenderElement<R>,

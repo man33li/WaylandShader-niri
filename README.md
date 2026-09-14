@@ -1,3 +1,34 @@
+# WaylandShader-niri
+
+Standalone fork of [niri](https://github.com/niri-wm/niri), maintained on `main`
+at [man33li/WaylandShader-niri](https://github.com/man33li/WaylandShader-niri).
+Native RetroArch Slang output shaders and per-monitor gamma/saturation, with
+separate compositor, Qt controller and CLI executables.
+
+**Start here:** [Build, preview and controls](docs/waylandshader/README.md) ·
+[History and architecture decisions](docs/waylandshader/HISTORY.md) ·
+[Manual upstream upgrades and rollback](docs/waylandshader/UPGRADING.md).
+
+This repository builds its own compositor sources directly:
+
+```sh
+python3 waylandshader/build.py
+python3 waylandshader/run-nested.py
+```
+
+Install the dependencies in the build guide first. Builds stage locally; they
+do not replace or restart the live compositor. Supported packaging is Arch/CachyOS
+plus standalone source builds. The old KWin repository's `niri-backend` branch
+and pinned niri patch are no longer this project's development/build path.
+
+## Upstream niri reference
+
+The original README below describes **stock niri**, including its releases and
+installation links. Use the WaylandShader guides above for this fork; upstream
+documentation is retained for compositor configuration and project attribution.
+
+---
+
 <h1 align="center"><img alt="niri" src="https://github.com/user-attachments/assets/07d05cd0-d5dc-4a28-9a35-51bae8f119a0"></h1>
 <p align="center">A scrollable-tiling Wayland compositor.</p>
 <p align="center">

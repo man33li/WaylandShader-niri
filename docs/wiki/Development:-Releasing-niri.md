@@ -1,3 +1,9 @@
+> **Upstream reference only.** This checklist describes releases of stock niri,
+> not WaylandShader-niri. This fork does not maintain upstream's release workflow
+> or RPM/Nix/DEB packaging. Follow the
+> [fork upgrade, package and publication procedure](../waylandshader/UPGRADING.md)
+> instead; preserve niri's upstream version and use the fork's separate package.
+
 This is a checklist of things to release a new niri version.
 
 We'll use `26.04` as the example new version.

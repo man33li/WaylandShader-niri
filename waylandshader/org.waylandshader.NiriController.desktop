@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=WaylandShader (niri)
+GenericName=Desktop Shader and Color Settings
+Comment=Configure native shaders, gamma, and saturation in niri-waylandshader
+Exec=waylandshader-niri-controller
+Icon=preferences-desktop-effects
+Terminal=false
+Categories=Qt;Settings;DesktopSettings;
+OnlyShowIn=niri;
+StartupNotify=true

@@ -23,6 +23,7 @@ pub mod rubber_band;
 pub mod screencasting;
 pub mod ui;
 pub mod utils;
+pub mod waylandshader;
 pub mod window;
 
 #[cfg(test)]

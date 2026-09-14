@@ -1,3 +1,19 @@
+# Contributing to WaylandShader-niri
+
+Develop this fork on `main`; submit fork-specific changes to
+[man33li/WaylandShader-niri](https://github.com/man33li/WaylandShader-niri).
+Prepare the native dependencies with `python3 waylandshader/build.py --support-only`
+before ordinary Cargo commands. Follow the [fork build guide](docs/waylandshader/README.md)
+and [manual upgrade procedure](docs/waylandshader/UPGRADING.md).
+
+Merge official upstream commits into a separate upgrade branch, verify them,
+then fast-forward the fork's shared `main`. Do not rebase or force-push published
+fork history. The rebase advice below concerns contributions **to upstream niri**,
+not maintenance of this shared fork. Preserve upstream changes rather than
+replacing files wholesale with old shader versions.
+
+---
+
 # Contributing to niri
 
 Thanks for your interest in niri!

@@ -596,6 +596,7 @@ impl Tty {
         match event {
             SessionEvent::PauseSession => {
                 debug!("pausing session");
+                niri.waylandshader.release_all();
 
                 self.libinput.suspend();
 
@@ -1128,6 +1129,8 @@ impl Tty {
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
         debug!("removing device: {device_id}");
+        // A removed render GPU can also back outputs on other DRM devices.
+        niri.waylandshader.release_all();
 
         let Ok(node) = DrmNode::from_dev_id(device_id) else {
             warn!("error creating DrmNode");
@@ -1914,6 +1917,22 @@ impl Tty {
             draw_damage(&mut output_state.debug_damage_tracker, &mut elements);
         }
 
+        // Apply only at presentation: captures keep the unfiltered scene.
+        let unlocked = matches!(niri.lock_state, crate::niri::LockState::Unlocked);
+        let same_gpu =
+            device.render_node.unwrap_or(self.primary_render_node) == self.primary_render_node;
+        let effect =
+            niri.waylandshader
+                .prepare(renderer.as_gles_renderer(), output, unlocked, same_gpu);
+        let filtering = effect.is_some();
+        if let Some(effect) = effect {
+            elements.insert(0, effect.into());
+        }
+        niri.output_state
+            .get_mut(output)
+            .unwrap()
+            .unfinished_animations_remain |= niri.waylandshader.animated(output);
+
         // Overlay planes are disabled by default as they cause weird performance issues on my
         // system.
         let flags = {
@@ -1943,7 +1962,11 @@ impl Tty {
                 }
             }
 
-            flags
+            if filtering {
+                FrameFlags::empty()
+            } else {
+                flags
+            }
         };
 
         // Hand them over to the DRM.

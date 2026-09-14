@@ -1,0 +1,18 @@
+// Used only by run-nested.py; no desktop-session autostarts or lock commands.
+input {
+    keyboard { xkb { layout "us"; }; }
+}
+output "winit" { scale 1; }
+layout {
+    gaps 8
+    default-column-width { proportion 0.5; }
+    focus-ring { off; }
+}
+prefer-no-csd
+hotkey-overlay { skip-at-startup; }
+spawn-at-startup "waylandshader-niri-controller"
+binds {
+    Mod+Shift+E { quit skip-confirmation=true; }
+    Mod+D { spawn "waylandshader-niri-controller"; }
+    Mod+Return { spawn "alacritty"; }
+}
