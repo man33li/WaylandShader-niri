@@ -146,6 +146,15 @@ ControllerError ControllerClient::acceptJson(const QString& json)
     next.preset = object.value(QStringLiteral("preset")).toString();
     next.requestedPreset = object.value(QStringLiteral("requestedPreset")).toString();
     next.error = object.value(QStringLiteral("error")).toString();
+    const auto recent = object.value(QStringLiteral("recentPresets"));
+    if (!recent.isUndefined() && !recent.isArray())
+        return invalid(QStringLiteral("recentPresets must be an array."));
+    for (const auto& entry : recent.toArray()) {
+        auto path = entry.toString();
+        if (!entry.isString() || path.isEmpty())
+            return invalid(QStringLiteral("recent preset must be a nonempty string."));
+        next.recentPresets.push_back(std::move(path));
+    }
     QSet<QString> names;
     for (const auto& entry : object.value(QStringLiteral("parameters")).toArray()) {
         if (!entry.isObject()) {

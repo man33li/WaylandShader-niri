@@ -175,6 +175,39 @@ checks. Physical DRM/lock/hotplug/HDR/VRR acceptance remains unclaimed. Current
 official-ref preflight results and build logs are retained outside Git under
 `build/upstream-candidates/`; the checker never labels those runtime passes.
 
+## Recently used presets (0.2.1)
+
+The controller adds a **Recent** menu next to the preset browser. Full paths
+distinguish equal filenames; choosing an entry fills the path without applying
+it until **Load preset** is used.
+
+The compositor owns one shared, persistent list for GUI and CLI loads. It
+records only successful preset commits, deduplicates reused paths, keeps the
+latest ten entries, and preserves history through failed loads and unloads.
+The existing shader JSON gains `recent_presets`; status exposes `recentPresets`.
+Older settings are accepted and acquire history after the saved preset loads
+successfully. Older binaries need their earlier settings restored on rollback;
+see [UPGRADING.md](UPGRADING.md#install-and-roll-back-without-replacing-a-live-compositor).
+
+Local verification used the real nested compositor and Qt controller:
+
+- Release source build and the no-default-features check passed.
+- Twelve distinct real shader loads verified the ten-entry limit and ordering.
+- A symlink alias and repeated loads verified deduplication; a failed compilation
+  preserved the working shader and history.
+- The actual popup was captured and operated using input confined to the nested
+  Wayland socket. Same-named files in different directories, spaces and an
+  ampersand remained distinguishable and selectable.
+- Selecting an entry did not load it; the load button applied it and promoted
+  it in history. A deleted recent file produced the normal GUI error without
+  replacing the working shader.
+- History survived shader unload, controller replacement and a compositor
+  restart. An older JSON without history retained its preset/output settings
+  and acquired history after successful startup compilation.
+- The previews exited normally; the live shader-settings checksum was unchanged.
+
+These checks add no physical DRM, lock, hotplug, HDR or VRR certification.
+
 ## Going forward
 
 Follow [UPGRADING.md](UPGRADING.md), not the historical pinned-patch procedure.

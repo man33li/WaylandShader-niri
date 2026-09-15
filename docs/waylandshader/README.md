@@ -18,7 +18,8 @@ standalone [niri fork](https://github.com/man33li/WaylandShader-niri).
   [Wayland-Shader-KDE](https://github.com/man33li/Wayland-Shader-KDE), not a build
   mode of this fork. Its `niri-backend` branch is historical/rollback material.
 - One preset and its parameters are shared across outputs. Each output has
-  independent history and separate shader/color enablement, gamma and saturation.
+  independent temporal frame history and separate shader/color enablement, gamma
+  and saturation.
 
 Stock niri and this fork can remain installed together. The executable/package
 name stays `niri-waylandshader`; the repository's name is `WaylandShader-niri`.
@@ -112,8 +113,9 @@ makepkg
 
 Run `makepkg` as the ordinary user. It stages the package at
 `build/niri-package/usr` and writes the package archive under `waylandshader/`.
-Version `26.04.ws0.2.0-1` identifies the first standalone integration, not a claim
-that its source equals the v26.04 tag; record the Git SHA when distributing it.
+The current package is `26.04.ws0.2.1-1`; `26.04.ws0.2.0-1` was the first
+standalone integration. These versions do not claim the source equals the
+v26.04 tag; record the Git SHA when distributing a build.
 The recipe does not provide, conflict with, or replace stock `niri`.
 
 Save work and log out normally before changing the compositor package/session.
@@ -165,6 +167,25 @@ Replace `eDP-2` with an actual ID/name from `outputs` (`winit` in the preview),
 and use a parameter declared by your preset. Selectors match exact ID first,
 otherwise a unique exact name. Keep presets' relative includes, textures and
 shader files together; presets are not bundled.
+
+Use **Recent** beside **Browse…** to choose a recently used shader, then click
+**Load preset** (or press Enter in the path field). Selection alone does not
+replace the working shader. The menu shows full paths, most recent first, to
+distinguish presets with the same filename.
+
+The compositor remembers the last **10 successfully loaded presets**, including
+loads made through the CLI. Loading an existing entry moves it to the top;
+symlinked load paths resolve to the same entry. Failed loads do not add or
+reorder entries, and unloading a shader does not clear the list. A moved or
+deleted file remains listed and produces the normal file error when loaded;
+use **Browse…** to locate its new path.
+
+History survives controller and compositor restarts in the existing shader
+JSON's `recent_presets` field; `waylandshader-nirictl status` exposes it as
+`recentPresets`. Older settings files need no manual conversion: their saved
+preset enters history after it loads successfully. History requires the updated
+compositor, not just the updated controller; the menu is disabled when empty
+or when connected to an older compositor without history support.
 
 The master switch bypasses both processing paths without discarding settings.
 Shader and color switches are independent; color works without a preset. Gamma

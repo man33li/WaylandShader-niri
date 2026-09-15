@@ -273,6 +273,13 @@ preset over multiple frames, not just its first frame. A build or ordinary Rust
 test does not validate GL interop. The hosted CI compiles the GPU regression but
 does not certify hardware rendering.
 
+Also check **Recent** after successful GUI and CLI loads: verify most-recent-first
+ordering, no duplicate entries, explicit **Load preset** after selection, and
+unchanged history after a failed load. Restart the controller to confirm it
+reads the compositor's history. `run-nested.py` intentionally discards settings
+when its compositor exits; test compositor-restart persistence with an isolated
+saved `WAYLANDSHADER_CONFIG`, never by restarting the live desktop.
+
 Before production adoption, validate on the intended physical outputs: ordinary
 rendering, disable/reenable, lock/unlock, suspend/resume, resize/scale and
 hotplug. Keep work saved and a known-good login path. Cross-GPU, HDR and VRR
@@ -334,6 +341,10 @@ If the new compositor cannot be used:
 3. If necessary, restore the backed-up shader JSON to the path recorded in
    `shader-settings-path.txt`, and restore the niri config after inspecting the
    changes. Do so while the fork is stopped, so it cannot overwrite the restore.
+   Releases before extension 0.2.1 reject the new `recent_presets` JSON field.
+   When rolling back to one of those releases, restore the pre-upgrade shader
+   JSON, or remove only `recent_presets` from a copy of the newer JSON before
+   restoring it. Keep the original newer file and stop the fork before editing.
 4. Preserve the failed branch, package version, logs and report. To rebuild old
    source without rewriting main, use a separate worktree at the
    `waylandshader-before-...` tag. The bundle can recover committed history if

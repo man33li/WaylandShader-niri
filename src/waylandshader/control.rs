@@ -17,6 +17,8 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+const MAX_RECENT_PRESETS: usize = 10;
+
 #[derive(Clone)]
 pub struct Settings {
     pub generation: u64,
@@ -52,6 +54,8 @@ impl Default for OutputSettings {
 struct Config {
     enabled: bool,
     preset: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    recent_presets: Vec<String>,
     parameters: BTreeMap<String, f32>,
     outputs: BTreeMap<String, OutputSettings>,
 }
@@ -159,6 +163,14 @@ impl Control {
                 data.committed.parameters = parameters;
                 data.persist_revision = data.persist_revision.wrapping_add(1);
             }
+            if !preset.is_empty()
+                && data.committed.recent_presets.first().map(String::as_str) != Some(preset)
+            {
+                data.committed.recent_presets.retain(|path| path != preset);
+                data.committed.recent_presets.insert(0, preset.to_owned());
+                data.committed.recent_presets.truncate(MAX_RECENT_PRESETS);
+                data.persist_revision = data.persist_revision.wrapping_add(1);
+            }
             data.pending_preset = false;
         } else if !loading && preset_failed && data.pending_preset {
             data.pending_preset = false;
@@ -192,6 +204,7 @@ impl Control {
     fn status_value(&self) -> Value {
         let data = self.0.data.lock();
         let mut status = data.status.clone();
+        status["recentPresets"] = json!(&data.committed.recent_presets);
         let errors: Vec<&str> = [
             status["error"].as_str().unwrap_or(""),
             &data.config_error,
@@ -329,7 +342,7 @@ fn read_config(path: &Path) -> Result<Config, String> {
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Config::default()),
         Err(err) => return Err(err.to_string()),
     };
-    let config: Config = serde_json::from_slice(&bytes).map_err(|err| err.to_string())?;
+    let mut config: Config = serde_json::from_slice(&bytes).map_err(|err| err.to_string())?;
     if !config.preset.is_empty() && !valid_preset_path(&config.preset) {
         return Err("preset must be an absolute .slangp path or empty".to_owned());
     }
@@ -350,6 +363,18 @@ fn read_config(path: &Path) -> Result<Config, String> {
     }) {
         return Err("invalid output ID, gamma (0.1..5), or saturation (0..2)".to_owned());
     }
+    // History is advisory: stale files remain selectable, but malformed entries
+    // must not prevent otherwise valid shader/output settings from loading.
+    let mut recent = Vec::with_capacity(config.recent_presets.len().min(MAX_RECENT_PRESETS));
+    for preset in config.recent_presets {
+        if valid_preset_path(&preset) && !recent.contains(&preset) {
+            recent.push(preset);
+            if recent.len() == MAX_RECENT_PRESETS {
+                break;
+            }
+        }
+    }
+    config.recent_presets = recent;
     Ok(config)
 }
 

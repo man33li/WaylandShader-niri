@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 #include <functional>
 
@@ -36,6 +37,7 @@ struct ControllerStatus {
     bool loading = false;
     QString preset;
     QString requestedPreset;
+    QStringList recentPresets;
     QString error;
     QVector<ControllerParameter> parameters;
     QVector<ControllerOutput> outputs;
