@@ -1,0 +1,24 @@
+[package]
+name = "waylandshader-runtime"
+version = "0.2.2"
+description = "Source-linked WaylandShader GLES runtime and control service"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+links = "waylandshader-niri-bridge"
+
+[dependencies]
+calloop.workspace = true
+parking_lot = "0.12"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+smithay = { workspace = true, features = ["renderer_gl"] }
+tracing.workspace = true
+zbus = { workspace = true, optional = true }
+
+[features]
+default = []
+dbus = ["dep:zbus"]

@@ -2,9 +2,9 @@
 
 [Build and controls](README.md) · [Manual upgrades](UPGRADING.md)
 
-This records the project's development through the standalone-fork migration on
-**2026-09-14**. Historical checks below are records from the previous workspace,
-not claims that every backend was re-tested during this migration. Dates are
+This records the project's development, including the standalone-fork migration
+on **2026-09-14** and subsequent releases. Verification is scoped to each entry,
+not a claim that every backend was re-tested for every change. Dates are
 included where recorded; the exact date of the initial KWin implementation is
 not inferred from file timestamps.
 
@@ -207,6 +207,48 @@ Local verification used the real nested compositor and Qt controller:
 - The previews exited normally; the live shader-settings checksum was unchanged.
 
 These checks add no physical DRM, lock, hotplug, HDR or VRR certification.
+
+## Workspace runtime extraction (0.2.2)
+
+Implemented on `refactor/waylandshader-workspace`, preserving the recent-presets
+work in checkpoint `d35070b6`.
+
+- Moves shader state, the GLES element, FFI, settings and D-Bus into the
+  `waylandshader-runtime` workspace crate under `waylandshader/runtime/`.
+- Leaves monitor identity, event-loop registration and GLES/TTY adaptation in
+  niri. Output, presentation, capture, lock and GPU teardown hooks stay local.
+- Moves native link ownership into the crate. The final executable retains its
+  private-library RUNPATH; the normal builder and private C ABI are unchanged.
+- Shares niri's Smithay revision and forwards the root D-Bus feature. CI checks
+  the runtime alone both with and without D-Bus, rather than relying only on
+  niri's larger dependency feature set.
+- Keeps makepkg's `waylandshader/src/` staging area separate from Rust sources.
+  Existing package archives and extracted package directories are preserved.
+
+A self-repatching sidecar was not adopted: it would still need niri source hooks,
+recompilation and render/lifecycle validation after upstream updates. The crate
+is a source boundary, not a plugin ABI for stock niri. Normal reviewed fork merges
+remain the upgrade path.
+
+Local verification:
+
+- Release build, 222 nonvisual Rust tests and four upstream-maintenance fixtures
+  passed. The runtime's two D-Bus feature configurations and niri's no-default-
+  features build checked successfully.
+- Native EGLImage regressions passed on Radeon 680M and RX 6700S, with default
+  desktop GL and the Mesa GL 3.3 override.
+- The real nested compositor rendered a constant shader at RGB `(38, 140, 217)`
+  and grayscale at `(147, 147, 147)`, while source screenshots stayed unfiltered.
+  Failed compilation retained the working shader, pixels and recent history.
+- Color-only mode, output shader bypass and master bypass worked. Real VHSPro
+  exposed 59 parameters; changing film grain changed animated frames. Rendering
+  remained active after resizing from 1244×1502 to 900×1502.
+- Preset, recent history, output controls and the changed parameter survived a
+  compositor restart. Both isolated runs exited normally.
+
+These checks do not certify physical DRM, lock security, hotplug, GPU removal,
+cross-GPU operation, HDR, VRR, latency or power behavior. No system installation,
+live-compositor restart, upstream merge or remote push was performed.
 
 ## Going forward
 

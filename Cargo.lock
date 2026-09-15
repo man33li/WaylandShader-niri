@@ -2294,7 +2294,6 @@ dependencies = [
  "ordered-float",
  "pango",
  "pangocairo",
- "parking_lot",
  "pipewire",
  "pkg-config",
  "png",
@@ -2315,6 +2314,7 @@ dependencies = [
  "wayland-client",
  "wayland-scanner",
  "wayland-server",
+ "waylandshader-runtime",
  "xcursor",
  "xshell",
  "zbus",
@@ -4309,6 +4309,19 @@ dependencies = [
  "memoffset",
  "once_cell",
  "pkg-config",
+]
+
+[[package]]
+name = "waylandshader-runtime"
+version = "0.2.2"
+dependencies = [
+ "calloop",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "smithay",
+ "tracing",
+ "zbus",
 ]
 
 [[package]]

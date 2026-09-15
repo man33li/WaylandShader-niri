@@ -11,6 +11,9 @@ standalone [niri fork](https://github.com/man33li/WaylandShader-niri).
   at `e1d3b0c47ce5bb77f16e5006aba604d23b233649` (2026-09-14).
 - The root Cargo workspace **is the compositor source**. There is no separate
   fetched niri tree, pinned `NIRI_REV`, or maintained niri patch to apply.
+- Shader state, GLES rendering and controls live in the source-linked
+  `waylandshader-runtime` workspace crate. Small niri-local adapters connect
+  monitor identity, redraw events and the physical/nested renderers.
 - Arch/CachyOS packaging and standalone Linux source builds are maintained.
   The inherited Nix/RPM/DEB recipes and upstream release/deployment automation
   were retired rather than left pointing at incompatible stock-niri builds.
@@ -113,7 +116,7 @@ makepkg
 
 Run `makepkg` as the ordinary user. It stages the package at
 `build/niri-package/usr` and writes the package archive under `waylandshader/`.
-The current package is `26.04.ws0.2.1-1`; `26.04.ws0.2.0-1` was the first
+The current package is `26.04.ws0.2.2-1`; `26.04.ws0.2.0-1` was the first
 standalone integration. These versions do not claim the source equals the
 v26.04 tag; record the Git SHA when distributing a build.
 The recipe does not provide, conflict with, or replace stock `niri`.
@@ -236,14 +239,27 @@ the VHSPro banding correction described in [HISTORY.md](HISTORY.md).
 
 | Location | Responsibility |
 | --- | --- |
-| `src/waylandshader/` | Output manager, renderer element, FFI, settings and D-Bus |
+| `waylandshader/runtime/` | Rust workspace crate: output manager, GLES element, FFI, settings, D-Bus and native linking |
+| `src/waylandshader/` | Niri monitor-profile policy, event-loop registration and GLES/TTY element adapter |
 | `src/backend/{tty,winit}.rs` | Physical/nested presentation and GPU lifecycle hooks |
 | `src/niri.rs`, `src/lib.rs` | Manager lifetime, output/lock hooks and module registration |
-| `build.rs`, root Cargo files | Native linking plus normal niri dependencies |
+| `build.rs`, root Cargo files | Executable RUNPATH, upstream build probes and workspace/dependency integration |
 | `waylandshader/bridge.{cpp,h}` | Desktop-GL runtime, EGLImage exchange and color pass |
 | `waylandshader/client/` | Niri-only Qt GUI and CLI, no KWin build branch |
 | `waylandshader/patches/` | Private librashader fixes, not a niri patch |
 | `waylandshader/{build,run-nested,check-upstream,watch-upstream}.py` | Build/preview/maintenance tools |
+
+The crate shares niri's pinned Smithay revision, but does not depend on niri,
+`niri-config` or its TTY renderer. Niri supplies a profile resolver when an output
+is registered and a callback attaching the control worker's redraw source.
+The local render-element wrapper delegates capture and draw without a heap
+allocation. The root `dbus` feature enables the crate's optional D-Bus service.
+The normal builder prepares the native libraries before Cargo; `--support-only`
+prints the environment needed to check or build the crate independently.
+
+The crate lives in `waylandshader/runtime/`, not `waylandshader/src/`: makepkg
+owns the latter staging directory and may clear it. Build and package commands
+are otherwise unchanged.
 
 This is **SDR sRGB/RGBA8**, not HDR-preserving. Hardware desktop GL, EGLImage
 import/export and fence support are required. Software renderers and differing
@@ -253,13 +269,21 @@ GPU removal, cross-GPU operation, HDR, VRR, latency or power behavior. These nee
 native-session validation on the intended machine before deployment.
 
 niri does not expose a supported persistent whole-output shader plugin API at
-the initial upstream baseline. A shared library alone would still need compositor
-hooks; see [upstream discussion #913](https://github.com/niri-wm/niri/issues/913).
-This fork is deliberately not a claim of a universal Wayland plugin.
+the initial upstream baseline; see
+[upstream discussion #913](https://github.com/niri-wm/niri/issues/913).
+This crate is linked into the compositor, not loaded into an unmodified niri.
+A self-patching sidecar would still need matching niri source, hook updates,
+a rebuild and validation after each upgrade. It cannot patch an installed
+binary into supporting shaders or make a clean patch prove rendering safety.
+This fork therefore retains reviewed upstream merges rather than package-manager
+auto-patching. The crate narrows the integration boundary; it does not eliminate
+Smithay/render-lifecycle maintenance or turn this into a universal Wayland plugin.
 
 ## Licenses
 
-niri retains GPL-3.0-or-later. Imported WaylandShader code retains MIT (see
-`waylandshader/LICENSE`); the patched private librashader retains MPL-2.0.
+niri and the extracted Rust runtime retain GPL-3.0-or-later (the runtime inherits
+the root Cargo workspace license). Imported native WaylandShader support and
+controls retain MIT (`waylandshader/LICENSE`); the patched private librashader
+retains MPL-2.0.
 The combined compositor is distributed under niri's GPL obligations. Shader
 presets and other dependencies retain their own licenses.

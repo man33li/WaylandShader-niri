@@ -204,12 +204,18 @@ Pay particular attention to:
 - `src/backend/tty.rs` and `winit.rs`: final-presentation hooks, proper GPU choice,
   capture bypass, output damage/animation and disabling direct scanout only when
   processing is active. New upstream frame optimizations must not skip effects.
-- `src/niri.rs`, `src/lib.rs`, `src/waylandshader/`: initialization, per-output
-  ownership, lock/history transitions and releasing GL objects **before** their
-  EGL display/backend disappears. Preserve test/no-D-Bus startup guards.
-- `build.rs` and Cargo files: retain native link env variables, private library
-  runpath, and upstream dependency revisions. Keep fork-only dependencies such
-  as `parking_lot`; do not downgrade Smithay to make old code compile.
+- `src/niri.rs`, `src/lib.rs`, `src/waylandshader/`: manager lifetime, output
+  registration, monitor-profile identity, control redraw registration, the
+  GLES/TTY render adapter and lock/history hooks. Release GL objects **before**
+  their EGL display/backend disappears. Preserve test/no-D-Bus startup guards.
+- `waylandshader/runtime/`: shader state, GLES presentation and the control
+  service. Keep this crate independent of niri's State, output-name policy and
+  TTY renderer. Its Smithay types must use the shared workspace revision.
+- The runtime's `build.rs` owns native link env variables and libraries; root
+  `build.rs` owns the executable RUNPATH and upstream probes. Preserve workspace
+  membership, the root dependency and `dbus` feature forwarding. Keep private
+  dependencies such as `parking_lot` in the runtime crate; do not downgrade
+  Smithay to make old code compile.
 - Packaging/workflows: upstream merges may reintroduce deleted recipes or stock
   install/release jobs. Keep the explicitly maintained Arch/source scope and
   distinct session/executable names; inspect modify/delete conflicts carefully.
@@ -229,8 +235,9 @@ a failed application disappear.
 For each newly distributed upstream snapshot, increment `pkgrel` in
 `waylandshader/PKGBUILD`. When the upstream release family or extension version
 changes, update `pkgver` appropriately and reset `pkgrel` to 1; extension version
-changes also update `waylandshader/CMakeLists.txt`. Keep niri's own Cargo version
-aligned with upstream rather than using it for cosmetic fork branding.
+changes also update `waylandshader/CMakeLists.txt` and the runtime crate's
+`waylandshader/runtime/Cargo.toml` version. Keep niri's own Cargo version aligned
+with upstream rather than using it for cosmetic fork branding.
 
 Record the upstream SHA, package version, integration adjustments, verification
 and remaining limitations in [HISTORY.md](HISTORY.md). Review all staged/untracked
@@ -252,6 +259,8 @@ export LD_LIBRARY_PATH="$WAYLANDSHADER_RASHADER_LIB_DIR${LD_LIBRARY_PATH:+:$LD_L
 
 cargo test --locked --workspace --exclude niri-visual-tests --jobs 4
 cargo check --locked --bin niri --no-default-features --jobs 4
+cargo check --locked -p waylandshader-runtime --no-default-features --jobs 4
+cargo check --locked -p waylandshader-runtime --no-default-features --features dbus --jobs 4
 python3 -m unittest discover -s waylandshader/tests -p test_upstream.py
 
 build/niri-support/niri_bridge_test waylandshader/tests/fixtures

@@ -1926,7 +1926,7 @@ impl Tty {
                 .prepare(renderer.as_gles_renderer(), output, unlocked, same_gpu);
         let filtering = effect.is_some();
         if let Some(effect) = effect {
-            elements.insert(0, effect.into());
+            elements.insert(0, crate::waylandshader::ShaderElement::from(effect).into());
         }
         niri.output_state
             .get_mut(output)

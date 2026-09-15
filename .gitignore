@@ -10,3 +10,4 @@ __pycache__/
 /waylandshader/pkg/
 /waylandshader/src/
 /waylandshader/*.pkg.tar.*
+/waylandshader/niri-waylandshader-*.pkg/

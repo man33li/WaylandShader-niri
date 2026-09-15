@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, OnceLock};
 
-use calloop::ping::{make_ping, Ping};
+use calloop::ping::{make_ping, Ping, PingSource};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -123,6 +123,40 @@ impl Control {
             redraw: OnceLock::new(),
             notify: OnceLock::new(),
         }))
+    }
+
+    /// Starts the isolated control worker after the host registers its redraw source.
+    ///
+    /// The host callback must arrange a compositor redraw when the source fires.
+    /// Startup errors are published through control status; repeated starts are ignored.
+    pub fn start(&self, register_redraw: impl FnOnce(PingSource) -> Result<(), String>) {
+        if self.0.notify.get().is_some() {
+            return;
+        }
+        let (ping, source) = match make_ping() {
+            Ok(pair) => pair,
+            Err(err) => {
+                self.service_error(format!("Cannot create WaylandShader redraw source: {err}"));
+                return;
+            }
+        };
+        if let Err(err) = register_redraw(source) {
+            self.service_error(format!("Cannot attach WaylandShader redraw source: {err}"));
+            return;
+        }
+        let _ = self.0.redraw.set(ping);
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let _ = self.0.notify.set(sender);
+        let worker_control = self.clone();
+        if let Err(err) = std::thread::Builder::new()
+            .name("waylandshader-control".to_owned())
+            .spawn(move || run_worker(worker_control, receiver))
+        {
+            self.service_error(format!("Cannot start WaylandShader control worker: {err}"));
+            return;
+        }
+        self.notify();
+        self.wake();
     }
 
     pub fn snapshot_since(&self, generation: u64) -> Option<Settings> {
@@ -651,40 +685,4 @@ fn run_worker(control: Control, receiver: mpsc::Receiver<()>) {
             }
         }
     }
-}
-
-/// Start independently of niri's session-only D-Bus services, including on Winit.
-pub fn start(state: &mut crate::niri::State) {
-    let control = state.niri.waylandshader.control.clone();
-    if control.0.notify.get().is_some() {
-        return;
-    }
-    let (ping, source) = match make_ping() {
-        Ok(pair) => pair,
-        Err(err) => {
-            control.service_error(format!("Cannot create WaylandShader redraw source: {err}"));
-            return;
-        }
-    };
-    if let Err(err) = state
-        .niri
-        .event_loop
-        .insert_source(source, |_, _, state| state.niri.queue_redraw_all())
-    {
-        control.service_error(format!("Cannot attach WaylandShader redraw source: {err}"));
-        return;
-    }
-    let _ = control.0.redraw.set(ping);
-    let (sender, receiver) = mpsc::sync_channel(1);
-    let _ = control.0.notify.set(sender);
-    let worker_control = control.clone();
-    if let Err(err) = std::thread::Builder::new()
-        .name("waylandshader-control".to_owned())
-        .spawn(move || run_worker(worker_control, receiver))
-    {
-        control.service_error(format!("Cannot start WaylandShader control worker: {err}"));
-        return;
-    }
-    control.notify();
-    control.wake();
 }

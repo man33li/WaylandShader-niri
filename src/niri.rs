@@ -201,7 +201,7 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
 
 pub struct Niri {
-    pub waylandshader: crate::waylandshader::Manager,
+    pub waylandshader: waylandshader_runtime::Manager,
     pub config: Rc<RefCell<Config>>,
 
     /// Output config from the config file.
@@ -772,7 +772,7 @@ impl State {
 
         let mut state = Self { backend, niri };
         #[cfg(not(test))]
-        crate::waylandshader::control::start(&mut state);
+        crate::waylandshader::start(&mut state);
 
         // Load the xkb_file config option if set by the user.
         state.load_xkb_file();
@@ -2636,7 +2636,9 @@ impl Niri {
 
         drop(config_);
         let mut niri = Self {
-            waylandshader: crate::waylandshader::Manager::new(),
+            waylandshader: waylandshader_runtime::Manager::new(
+                crate::waylandshader::output_profile,
+            ),
             config,
             config_file_output_config,
             config_file_watcher: None,

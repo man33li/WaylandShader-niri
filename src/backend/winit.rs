@@ -317,7 +317,7 @@ impl Winit {
             niri.waylandshader
                 .prepare(self.backend.renderer(), output, unlocked, true)
         {
-            elements.insert(0, effect.into());
+            elements.insert(0, crate::waylandshader::ShaderElement::from(effect).into());
         }
         niri.output_state
             .get_mut(output)
