@@ -67,7 +67,8 @@ def staging_paths(parser, prefix_arg, destdir_arg):
         source = WORK / name
         if installed.resolve().is_relative_to(source) or source.is_relative_to(installed.resolve()):
             parser.error("The staging destination must not overlap dependency build directories")
-    for relative in ("", "bin", "lib/waylandshader", "share/applications", "share/wayland-sessions",
+    for relative in ("", "bin", "lib/waylandshader", "lib/systemd/user", "lib/dinit.d/user",
+                     "share/applications", "share/wayland-sessions",
                      "share/doc/niri-waylandshader", "share/licenses/niri-waylandshader"):
         if not (installed / relative).resolve().is_relative_to(staging):
             parser.error(f"Staging path {installed / relative} escapes {staging}")

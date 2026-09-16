@@ -253,6 +253,67 @@ These checks do not certify physical DRM, lock security, hotplug, GPU removal,
 cross-GPU operation, HDR, VRR, latency or power behavior. No system installation,
 live-compositor restart, upstream merge or remote push was performed.
 
+## Managed desktop session parity (0.2.2-2)
+
+The user reported missing Flatpak entries in native Noctalia 5.1.0 and no Bottles
+installer file chooser, while both worked in stock niri. The packaged login
+entry ran the compositor directly instead of using stock niri's session
+launcher. This was a session-integration regression, not an established shader
+rendering defect.
+
+- The live Noctalia process lacked `XDG_DATA_DIRS`, despite correct Flatpak paths
+  in the user manager. Stock login-shell initialization supplies those paths.
+- `graphical-session.target` was inactive, and GNOME portal activation repeatedly
+  failed its `Requisite` dependency. The backend started successfully during
+  the intervening stock niri session.
+- Direct compositor output went to the greeter's TTY, not `niri.service`'s
+  journal. The separately named managed service now provides a useful log unit.
+
+The package now derives a fork-named session launcher, systemd service/shutdown
+target and dinit resources from upstream's checked-out resources. It retains
+the login environment, readiness ordering, XDG autostarts and shutdown behavior.
+Stock units and desktop identity remain unchanged. It refuses overlapping stock
+or fork services and extends staging-path containment checks to the new unit
+directories. No compositor/rendering code or kernel parameters changed.
+
+Verification used temporary assets and isolated runtime/D-Bus namespaces:
+
+- The installed launcher entered the real fish login environment; the resulting
+  desktop catalog included system Bottles and user RetroArch exports. Manager
+  calls in this environment probe were intercepted, never sent to the live bus.
+- Generated shell syntax and systemd unit verification passed. The generic
+  desktop-file validator rejects `DesktopNames` on both this entry and the stock
+  niri session entry; that existing session-specific key was retained.
+- An actual nested compositor ran under private copies of the generated systemd
+  graph. The real GNOME backend failed its prerequisite before the private
+  graphical target existed, then started after compositor readiness.
+- Actual Noctalia displayed Bottles in its launcher. The real GNOME/Nautilus
+  file chooser opened and returned a successful cancellation response without
+  selecting a file.
+- Target shutdown stopped the portal before compositor SIGTERM; niri exited 0.
+  Noctalia's native logout command also exited the compositor 0. Its portal
+  reported a lost Wayland connection, matching the stock logout pattern.
+- Temporary units, helpers and runtime state were removed. The original live
+  compositor and Noctalia processes were not restarted.
+
+The non-session nested test does not expose Mutter's session service channel.
+This is not certification of Bottles' exact native umu/transient-parent flow,
+dinit operation, physical logout, suspend or reboot. A fresh native login is
+required after installing the corrected package.
+
+The supplied shutdown photos showed an older `7f91449f-modified` build receiving
+SIGTERM, followed by Radeon 680M (`07:00.0`) DMUB errors. Retained logs show the
+same error class on kernels `7.2.4-3-cachyos` and `7.2.5-1-cachyos`, before the
+first fork launch and during stock niri startup/exit. On the photographed reboot,
+the login scope stopped at 19:50:29 while kernel diagnostics continued to
+19:50:50 (+04:00). The error is not unique to this fork.
+
+In the [upstream 7.2.5 DMUB status definition](https://github.com/gregkh/linux/blob/v7.2.5/drivers/gpu/drm/amd/display/dmub/dmub_srv.h),
+status 2 is a display-microcontroller command queue being full, not a shader
+compiler error. Static inspection found no demonstrated shader-before-backend
+teardown inversion. The session fix does not claim to cure this kernel/firmware
+problem, and no driver reset or boot-parameter workaround was applied.
+
 ## Going forward
 
 Follow [UPGRADING.md](UPGRADING.md), not the historical pinned-patch procedure.

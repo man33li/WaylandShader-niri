@@ -2,16 +2,17 @@
 pkgname=niri-waylandshader
 # Maintained manually together with CMakeLists.txt; never rewrite sources in pkgver().
 pkgver=26.04.ws0.2.2
-pkgrel=1
+pkgrel=2
 pkgdesc='Separately named niri with native Slang shaders and per-output color controls'
 arch=('x86_64' 'aarch64')
 url='https://github.com/man33li/WaylandShader-niri'
 license=('GPL-3.0-or-later' 'MIT' 'MPL-2.0')
-depends=('cairo' 'glib2' 'libdisplay-info' 'libinput' 'libpipewire' 'libxkbcommon'
+depends=('bash' 'cairo' 'glib2' 'libdisplay-info' 'libinput' 'libpipewire' 'libxkbcommon'
          'mesa' 'pango' 'pixman' 'seatd' 'systemd-libs' 'wayland' 'libepoxy' 'qt6-base')
 makedepends=('git' 'rust' 'cmake' 'ninja' 'python' 'pkgconf' 'clang')
 optdepends=('niri: unmodified compositor and rollback login session'
-            'xdg-desktop-portal-gnome: screencasting'
+            'systemd: managed systemd login session'
+            'xdg-desktop-portal-gnome: GNOME file chooser and screencasting backend'
             'xdg-desktop-portal-gtk: desktop portals')
 options=('!lto')
 

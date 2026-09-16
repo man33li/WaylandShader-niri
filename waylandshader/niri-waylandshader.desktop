@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=niri (WaylandShader)
 Comment=niri with native desktop shader effects; stock niri remains available
-Exec=niri-waylandshader --session
-TryExec=niri-waylandshader
+Exec=niri-waylandshader-session
+TryExec=niri-waylandshader-session
 Type=Application
 DesktopNames=niri

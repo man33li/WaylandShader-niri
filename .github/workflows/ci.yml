@@ -27,7 +27,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed git rust cmake ninja python pkgconf clang \
             cairo glib2 libdisplay-info libinput libpipewire libxkbcommon mesa \
-            pango pixman seatd systemd-libs wayland libepoxy qt6-base
+            pango pixman seatd systemd wayland libepoxy qt6-base
           install -dm700 "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME"
       - uses: actions/checkout@v6
         with:
@@ -36,6 +36,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build and stage the standalone compositor and controls
         run: python3 waylandshader/build.py --tests --jobs 2
+      - name: Validate generated session resources
+        run: |
+          sh -n build/niri-install/bin/niri-waylandshader-session
+          systemd-analyze --user verify \
+            build/niri-install/lib/systemd/user/niri-waylandshader.service \
+            build/niri-install/lib/systemd/user/niri-waylandshader-shutdown.target
       - name: Run upstream nonvisual Rust tests
         run: cargo test --locked --workspace --exclude niri-visual-tests --jobs 2
       - name: Check the no-D-Bus build

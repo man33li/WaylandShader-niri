@@ -224,6 +224,10 @@ Pay particular attention to:
 - Packaging/workflows: upstream merges may reintroduce deleted recipes or stock
   install/release jobs. Keep the explicitly maintained Arch/source scope and
   distinct session/executable names; inspect modify/delete conflicts carefully.
+- `resources/niri-session`, session units and `waylandshader/CMakeLists.txt`:
+  preserve the generated fork namespace, login-shell/environment setup, READY
+  ordering and shutdown target. Never replace the login entry with a bare
+  `niri-waylandshader --session` or overwrite stock service files.
 
 Resolve Cargo.toml first. For Cargo.lock conflicts, preserve the upstream locked
 dependencies and reconcile the fork additions; if necessary use upstream's lock
@@ -267,6 +271,10 @@ cargo check --locked --bin niri --no-default-features --jobs 4
 cargo check --locked -p waylandshader-runtime --no-default-features --jobs 4
 cargo check --locked -p waylandshader-runtime --no-default-features --features dbus --jobs 4
 python3 -m unittest discover -s waylandshader/tests -p test_upstream.py
+sh -n build/niri-install/bin/niri-waylandshader-session
+systemd-analyze --user verify \
+  build/niri-install/lib/systemd/user/niri-waylandshader.service \
+  build/niri-install/lib/systemd/user/niri-waylandshader-shutdown.target
 
 build/niri-support/niri_bridge_test waylandshader/tests/fixtures
 MESA_GL_VERSION_OVERRIDE=3.3 build/niri-support/niri_bridge_test waylandshader/tests/fixtures
@@ -300,6 +308,15 @@ hotplug. Keep work saved and a known-good login path. Cross-GPU, HDR and VRR
 support must not be inferred from a passing nested session; the initial shader
 pipeline is SDR and rejects different render/scanout GPUs. Do not claim a
 security or lifecycle check you did not perform.
+
+On a systemd desktop, also validate the [managed session lifecycle](README.md#managed-session-startup-and-shutdown)
+after a normal logout/login: `niri-waylandshader.service` and
+`graphical-session.target` should be active, Flatpak applications should be
+discoverable by the actual launcher, and a real portal chooser should open.
+Check ordinary logout and the intended reboot/suspend paths separately. Do not
+start another native compositor or restart portals under a running desktop to
+perform this check. Kernel display-controller errors require their own
+stock-versus-fork/boot comparison; a SIGTERM notice alone is not a crash.
 
 ## Commit, promote and publish
 
@@ -343,6 +360,9 @@ use a glob that might select several old/new packages. Save work, log out, and
 from a TTY or another desktop run `sudo pacman -U` with that exact path. Then
 select **niri (WaylandShader)**. Check `waylandshader-nirictl outputs`: physical
 connectors, not just `winit`, indicate the actual desktop session.
+The login entry must use `niri-waylandshader-session`; do not globally enable its
+service or start it alongside stock niri. For logs use
+`journalctl --user -b -u niri-waylandshader.service`.
 
 If the new compositor cannot be used:
 

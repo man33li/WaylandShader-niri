@@ -38,6 +38,47 @@ if(WAYLANDSHADER_BUILD_TESTS)
     add_test(NAME niri_bridge COMMAND niri_bridge_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
     set_tests_properties(niri_bridge PROPERTIES SKIP_RETURN_CODE 77)
 endif()
+
+# Keep the upstream login environment, readiness, autostart and shutdown lifecycle.
+# Namespace the session-manager resources, not the niri desktop/config identity.
+set(SESSION_DIR "${CMAKE_CURRENT_BINARY_DIR}/session")
+file(MAKE_DIRECTORY "${SESSION_DIR}/dinit")
+set(SESSION_BINARY "${CMAKE_INSTALL_FULL_BINDIR}/niri-waylandshader")
+string(REPLACE "%" "%%" SYSTEMD_SESSION_BINARY "${SESSION_BINARY}")
+foreach(resource IN ITEMS niri-session niri.service niri-shutdown.target dinit/niri dinit/niri.target)
+    set(source "${CMAKE_CURRENT_SOURCE_DIR}/../resources/${resource}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${source}")
+    file(READ "${source}" session)
+    string(REPLACE "niri" "niri-waylandshader" session "${session}")
+    # Existing dinit autostart configuration remains shared with the niri desktop.
+    string(REPLACE "/niri-waylandshader.d/" "/niri.d/" session "${session}")
+    string(REPLACE "exec niri-waylandshader --session"
+        "exec \"${SESSION_BINARY}\" --session" session "${session}")
+    string(REPLACE "ExecStart=niri-waylandshader --session"
+        "ExecStart=\"${SYSTEMD_SESSION_BINARY}\" --session" session "${session}")
+    string(REPLACE "command            = niri-waylandshader --session"
+        "command            = \"${SESSION_BINARY}\" --session" session "${session}")
+    # Refuse a second compositor; never stop or replace the stock service.
+    string(REPLACE "is-active niri-waylandshader.service; then"
+        "is-active niri-waylandshader.service ||\n       systemctl --user -q is-active niri.service; then"
+        session "${session}")
+    string(REPLACE "is-started niri-waylandshader 2>/dev/null; then"
+        "is-started niri-waylandshader 2>/dev/null ||\n       dinitctl --quiet --user is-started niri 2>/dev/null; then"
+        session "${session}")
+    string(REPLACE "A niri-waylandshader session is already running."
+        "A niri session is already running." session "${session}")
+    string(REPLACE "niri" "niri-waylandshader" destination "${resource}")
+    file(WRITE "${SESSION_DIR}/${destination}" "${session}")
+endforeach()
+
+install(PROGRAMS "${SESSION_DIR}/niri-waylandshader-session"
+    DESTINATION "${CMAKE_INSTALL_BINDIR}")
+install(FILES "${SESSION_DIR}/niri-waylandshader.service"
+    "${SESSION_DIR}/niri-waylandshader-shutdown.target"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/systemd/user")
+install(FILES "${SESSION_DIR}/dinit/niri-waylandshader"
+    "${SESSION_DIR}/dinit/niri-waylandshader.target"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/dinit.d/user")
 install(TARGETS waylandshader-niri-controller waylandshader-nirictl
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 install(PROGRAMS "${NIRI_EXECUTABLE}" DESTINATION "${CMAKE_INSTALL_BINDIR}" RENAME niri-waylandshader)

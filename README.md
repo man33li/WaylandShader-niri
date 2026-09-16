@@ -97,17 +97,24 @@ cd waylandshader
 makepkg
 ```
 
-The current recipe is **`niri-waylandshader` 26.04.ws0.2.2-1**. It installs:
+The current recipe is **`niri-waylandshader` 26.04.ws0.2.2-2**. It installs:
 
 | Component | Name |
 | --- | --- |
 | Compositor | `niri-waylandshader` |
+| Session launcher | `niri-waylandshader-session` |
+| User compositor service | `niri-waylandshader.service` |
 | Settings GUI | `waylandshader-niri-controller` |
 | CLI | `waylandshader-nirictl` |
 | Login session | **niri (WaylandShader)** |
 
 Stock `niri`, its service and its login entry are not replaced. Updating the
 distribution's `niri` package does not update this fork.
+The login entry uses the session launcher, not the raw compositor command.
+It restores stock niri's login-shell environment, graphical-session/portal
+lifecycle and XDG autostarts with separate fork unit names. Do **not** enable
+the compositor service globally or add duplicate portal/Noctalia autostarts.
+See [managed startup and shutdown](docs/waylandshader/README.md#managed-session-startup-and-shutdown).
 
 Save work and log out before changing the compositor package. Install the exact
 archive from another session or a TTY, keeping a known-good package and the stock

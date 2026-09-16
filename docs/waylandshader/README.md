@@ -68,9 +68,13 @@ This builds the checked-out compositor and stages:
 ```text
 build/niri-install/
   bin/niri-waylandshader
+  bin/niri-waylandshader-session
   bin/waylandshader-niri-controller
   bin/waylandshader-nirictl
   lib/waylandshader/libwaylandshader-rashader.so.2
+  lib/systemd/user/niri-waylandshader.service
+  lib/systemd/user/niri-waylandshader-shutdown.target
+  lib/dinit.d/user/{niri-waylandshader,niri-waylandshader.target}
   share/wayland-sessions/niri-waylandshader.desktop
   share/applications/org.waylandshader.NiriController.desktop
   share/doc/niri-waylandshader/{README,REFACTORING,HISTORY,UPGRADING}.md
@@ -119,7 +123,7 @@ makepkg
 
 Run `makepkg` as the ordinary user. It stages the package at
 `build/niri-package/usr` and writes the package archive under `waylandshader/`.
-The current package is `26.04.ws0.2.2-1`; `26.04.ws0.2.0-1` was the first
+The current package is `26.04.ws0.2.2-2`; `26.04.ws0.2.0-1` was the first
 standalone integration. These versions do not claim the source equals the
 v26.04 tag; record the Git SHA when distributing a build.
 The recipe does not provide, conflict with, or replace stock `niri`.
@@ -127,10 +131,13 @@ The recipe does not provide, conflict with, or replace stock `niri`.
 Save work and log out normally before changing the compositor package/session.
 From another session or a TTY, install the exact new archive with `sudo pacman -U`.
 Choose **niri (WaylandShader)** in the display manager, keeping the original
-**niri** entry available for rollback. This direct-launch entry does not use or
-replace `niri.service`, and does not reproduce the stock systemd session's
-entire desktop autostart lifecycle. It uses your normal niri configuration.
-Never restart the display manager or `niri.service` inside your running desktop.
+**niri** entry available for rollback. The entry runs
+`niri-waylandshader-session`, which uses its own compositor service and shutdown
+target while preserving stock niri's session lifecycle. It uses your normal
+niri configuration and does not replace `niri.service`.
+Never restart the display manager or either compositor service inside your
+running desktop. Re-enter the session after installing this packaging fix;
+existing compositor/Noctalia processes do not acquire a new login environment.
 
 ### Source-only session
 
@@ -143,13 +150,105 @@ prefix="$PWD/build/releases/$revision"
 python3 waylandshader/build.py --prefix "$prefix"
 ```
 
-After validation, save work and log out. From a real TTY login, export that
-prefix's `bin` directory into `PATH`, unset `WAYLAND_DISPLAY`, `WAYLAND_SOCKET`,
-`DISPLAY` and `NIRI_SOCKET`, then run `niri-waylandshader --session`. Do not do
-this in a terminal window inside another desktop. No display-manager entry is
-installed by local staging. Never rebuild into a prefix while its compositor
-is running; use a new versioned prefix. Rollback means leaving that session and
-running the retained known-good prefix, not resetting a running process's files.
+After validation, save work and log out. From a real TTY login, set `prefix` to
+the already-built versioned directory. On systemd, link its two session units
+into the user manager before launching:
+
+```sh
+systemctl --user link \
+  "$prefix/lib/systemd/user/niri-waylandshader.service" \
+  "$prefix/lib/systemd/user/niri-waylandshader-shutdown.target"
+export PATH="$prefix/bin:$PATH"
+unset WAYLAND_DISPLAY WAYLAND_SOCKET DISPLAY NIRI_SOCKET
+"$prefix/bin/niri-waylandshader-session"
+```
+
+Do not run this inside another desktop. These user-unit links override packaged
+unit definitions. When changing prefixes, inspect and replace only your existing
+links while the fork is stopped; do not overwrite custom units. Remove those
+links when returning to packaged units. The service embeds the configured
+prefix's executable path, so configure/build for the intended prefix rather than
+relocating an existing installation with `cmake --install --prefix`.
+
+No display-manager entry is installed into system directories by local staging.
+Never rebuild into an in-use prefix. Rollback means leaving the session and
+selecting the retained prefix and its units, not replacing a running process's
+files. Dinit resources are also derived from upstream; a dinit deployment needs
+the matching niri build feature and service search-path setup. The session
+verification recorded here exercised systemd, not dinit.
+
+## Managed session startup and shutdown
+
+The compositor binary's `--session` flag is **not** a substitute for niri's
+session launcher. Before package revision `0.2.2-2`, the fork entry bypassed that
+launcher. On the reported greetd setup this skipped Flatpak's login-shell data
+paths and left `graphical-session.target` inactive, preventing the preferred
+GNOME portal backend from starting.
+
+The corrected systemd path is:
+
+```text
+display manager / TTY
+  -> niri-waylandshader-session
+     -> user's login shell and its profile/vendor environment
+     -> import login environment into user systemd and D-Bus activation
+     -> start and wait for niri-waylandshader.service
+        -> graphical-session-pre.target
+        -> niri-waylandshader --session
+           -> backend, Wayland/IPC/X11 sockets and session D-Bus interfaces
+           -> export display variables, then notify READY
+        -> graphical-session.target and xdg-desktop-autostart.target
+```
+
+The launcher, units and dinit resources are generated from the checked-out
+upstream `resources/` files, rather than maintaining a second launcher
+implementation. Fork unit names are separate; desktop identity remains `niri`.
+The launcher refuses an already-active stock or fork compositor service. Both
+sessions still share a user manager, portal names and graphical targets, so
+separate names do not make concurrent graphical sessions safe.
+
+| Component | Owner and activation |
+| --- | --- |
+| Compositor service | Started explicitly by the selected session launcher; no global `enable` step |
+| Graphical session and XDG autostarts | Pulled in and ordered by the compositor service; not manually started |
+| GNOME/GTK portal backends | D-Bus-activated user services; GNOME requires an active graphical session |
+| Noctalia and polkit agent | Existing niri configuration or the user's chosen autostart mechanism; do not add duplicate launchers |
+| Xwayland-satellite | Niri's built-in on-demand X11 socket activation; do not spawn a second copy |
+| PipeWire/WirePlumber | Existing user sockets/services and their dependencies, not compositor-specific copies |
+| Keyring | Existing PAM/socket/D-Bus configuration; the fork does not create or automatically unlock a keyring |
+| Power actions | Noctalia/niri clients of logind and system services, not direct GPU reset commands |
+
+On compositor quit, the launcher waits for its service to finish, starts the
+fork's shutdown target to stop the shared graphical targets, then clears the
+display/session variables it imported. Services with `PartOf=graphical-session.target`
+are stopped with the session. Detached application scopes are not all explicitly
+bound to that target; do not assume every background application is killed.
+
+During an ordered target stop, reverse ordering stops the portal backend before
+the compositor. On direct niri/Noctalia logout the compositor can disconnect
+Wayland first, so a portal's `Lost connection to Wayland compositor` or broken
+pipe at that point can also occur with stock niri. Noctalia's native niri logout
+uses niri IPC; reboot/poweroff instead hand off to systemctl/logind/PID 1.
+`quitting due to receiving signal SIGTERM` is normal graceful-exit logging.
+
+In the inspected Noctalia 5 setup, niri starts Noctalia and the KDE polkit agent.
+The native shell reads TOML and its state-sidecar settings, not legacy
+`settings.json`; do not change legacy idle/power settings expecting them to
+control the native shell. Do not blindly copy a distro template enabling another
+polkit agent while retaining the existing one.
+
+For subsequent diagnostics, use the fork's actual unit:
+
+```sh
+systemctl --user status niri-waylandshader.service graphical-session.target
+journalctl --user -b -u niri-waylandshader.service \
+  -u xdg-desktop-portal.service -u xdg-desktop-portal-gnome.service
+```
+
+Kernel `amdgpu`/`DMUB` errors are a separate layer. In the reported machine's
+retained logs they occurred before WaylandShader startup and around stock niri
+transitions as well. Do not hide them or apply speculative driver flags as a
+session fix; see the [session-parity verification record](HISTORY.md#managed-desktop-session-parity-022-2).
 
 ## Controls and settings
 
