@@ -1,14 +1,17 @@
-# WaylandShader-niri
+# WaylandShader-niri build and control guide
 
 Native whole-output RetroArch Slang shaders and per-monitor color controls in a
 standalone [niri fork](https://github.com/man33li/WaylandShader-niri).
+This guide covers the **0.2.2 workspace-runtime edition**.
 
-[Project history](HISTORY.md) · [Manual upstream upgrades and rollback](UPGRADING.md)
+[Refactoring process](REFACTORING.md) · [Project history](HISTORY.md) ·
+[Manual upstream upgrades and rollback](UPGRADING.md)
 
 ## Repository and supported scope
 
-- `main` is the maintained fork branch, initially based on official niri `main`
-  at `e1d3b0c47ce5bb77f16e5006aba604d23b233649` (2026-09-14).
+- The 0.2.2 source line is `refactor/waylandshader-workspace`; publishing that
+  branch does not promote it to `main`. The fork was initially based on official
+  niri `main` at `e1d3b0c47ce5bb77f16e5006aba604d23b233649` (2026-09-14).
 - The root Cargo workspace **is the compositor source**. There is no separate
   fetched niri tree, pinned `NIRI_REV`, or maintained niri patch to apply.
 - Shader state, GLES rendering and controls live in the source-linked
@@ -34,7 +37,7 @@ Clone with complete history; the upgrade checker deliberately refuses shallow
 checkouts:
 
 ```sh
-git clone https://github.com/man33li/WaylandShader-niri.git
+git clone --branch refactor/waylandshader-workspace https://github.com/man33li/WaylandShader-niri.git
 cd WaylandShader-niri
 git remote add upstream https://github.com/niri-wm/niri.git
 git fetch upstream main
@@ -70,7 +73,7 @@ build/niri-install/
   lib/waylandshader/libwaylandshader-rashader.so.2
   share/wayland-sessions/niri-waylandshader.desktop
   share/applications/org.waylandshader.NiriController.desktop
-  share/doc/niri-waylandshader/{README,HISTORY,UPGRADING}.md
+  share/doc/niri-waylandshader/{README,REFACTORING,HISTORY,UPGRADING}.md
   share/licenses/niri-waylandshader/
 ```
 

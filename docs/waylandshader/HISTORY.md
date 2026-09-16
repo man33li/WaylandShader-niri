@@ -212,6 +212,9 @@ These checks add no physical DRM, lock, hotplug, HDR or VRR certification.
 
 Implemented on `refactor/waylandshader-workspace`, preserving the recent-presets
 work in checkpoint `d35070b6`.
+The extraction itself is commit `aa5b8455`. The
+[refactoring process](REFACTORING.md) records its migration sequence and API
+boundaries; this section records the resulting behavior and verification.
 
 - Moves shader state, the GLES element, FFI, settings and D-Bus into the
   `waylandshader-runtime` workspace crate under `waylandshader/runtime/`.

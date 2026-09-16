@@ -1,6 +1,6 @@
 # Manual upstream upgrades and rollback
 
-[Build and controls](README.md) · [History](HISTORY.md)
+[Build and controls](README.md) · [Refactoring process](REFACTORING.md) · [History](HISTORY.md)
 
 The maintained repository is
 [man33li/WaylandShader-niri](https://github.com/man33li/WaylandShader-niri).
@@ -8,6 +8,12 @@ The maintained repository is
 [the official niri repository](https://github.com/niri-wm/niri).
 The shared `main` keeps upstream ancestry through **merges**, not rebases,
 force-pushes, a second source clone, or a refreshed niri patch.
+
+**0.2.2 branch status:** the workspace-runtime extraction is published on
+`refactor/waylandshader-workspace`. The `main`-based upgrade/promotion workflow
+below assumes that source line has first been reviewed and promoted to the
+shared `main`. Publishing the feature branch alone does not do that; use the
+build guide to try this version without switching to an older `main`.
 
 **Nothing here automatically upgrades a running compositor.** A checker can
 prepare/build a candidate, but a person resolves conflicts, validates it,
@@ -42,11 +48,10 @@ If shallow, fetch complete history before attempting merges/checks:
 git fetch --unshallow origin
 ```
 
-The initial migration is a local change until its owner publishes it. After
-reviewing/committing the integration on the real fork's `main`, publish normally:
+For the 0.2.2 source line, publish reviewed commits to its own branch:
 
 ```sh
-git push -u origin main
+git push -u origin refactor/waylandshader-workspace
 ```
 
 Do not force-push to make a rejected push succeed. Fetch and inspect the remote

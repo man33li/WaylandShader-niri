@@ -46,6 +46,7 @@ install(FILES org.waylandshader.NiriController.desktop DESTINATION "${CMAKE_INST
 install(FILES niri-waylandshader.desktop DESTINATION "${CMAKE_INSTALL_DATADIR}/wayland-sessions")
 install(FILES
     ../docs/waylandshader/README.md
+    ../docs/waylandshader/REFACTORING.md
     ../docs/waylandshader/HISTORY.md
     ../docs/waylandshader/UPGRADING.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/niri-waylandshader")

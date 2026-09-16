@@ -1,7 +1,10 @@
 # Contributing to WaylandShader-niri
 
-Develop this fork on `main`; submit fork-specific changes to
+Develop fork-specific changes on feature branches and submit them to
 [man33li/WaylandShader-niri](https://github.com/man33li/WaylandShader-niri).
+The 0.2.2 workspace-runtime source line is `refactor/waylandshader-workspace`.
+Read the [refactoring guide](docs/waylandshader/REFACTORING.md) before changing
+the crate boundary, renderer adapters or lifecycle hooks.
 Prepare the native dependencies with `python3 waylandshader/build.py --support-only`
 before ordinary Cargo commands. Follow the [fork build guide](docs/waylandshader/README.md)
 and [manual upgrade procedure](docs/waylandshader/UPGRADING.md).
