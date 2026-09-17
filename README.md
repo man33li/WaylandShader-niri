@@ -167,6 +167,7 @@ coupling, extraction steps, API boundaries, preserved invariants and verificatio
 - [Refactoring process and crate boundaries](docs/waylandshader/REFACTORING.md)
 - [Project history and verification records](docs/waylandshader/HISTORY.md)
 - [Upstream upgrades and rollback](docs/waylandshader/UPGRADING.md)
+- [Maintenance tools, skills and rules](docs/waylandshader/MAINTENANCE.md)
 - [Contributing to this fork](CONTRIBUTING.md)
 - [WaylandShader-niri issues](https://github.com/man33li/WaylandShader-niri/issues)
 

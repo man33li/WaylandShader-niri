@@ -50,7 +50,7 @@ jobs:
         run: |
           cargo check --locked -p waylandshader-runtime --no-default-features --jobs 2
           cargo check --locked -p waylandshader-runtime --no-default-features --features dbus --jobs 2
-      - name: Exercise Git merge and conflict preservation
-        run: python3 -m unittest discover -s waylandshader/tests -p test_upstream.py
+      - name: Run maintenance-tool regression checks
+        run: python3 -m unittest discover -s waylandshader/tests -p 'test_*.py'
       - name: State hardware validation boundary
         run: echo "The GPU regression was compiled, not run. A real-GPU and nested/native-session check is required before installation."

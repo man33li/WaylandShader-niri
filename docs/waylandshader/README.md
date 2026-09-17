@@ -5,7 +5,7 @@ standalone [niri fork](https://github.com/man33li/WaylandShader-niri).
 This guide covers the **0.2.2 workspace-runtime edition**.
 
 [Refactoring process](REFACTORING.md) · [Project history](HISTORY.md) ·
-[Manual upstream upgrades and rollback](UPGRADING.md)
+[Manual upstream upgrades and rollback](UPGRADING.md) · [Maintenance toolkit](MAINTENANCE.md)
 
 ## Repository and supported scope
 
@@ -77,7 +77,7 @@ build/niri-install/
   lib/dinit.d/user/{niri-waylandshader,niri-waylandshader.target}
   share/wayland-sessions/niri-waylandshader.desktop
   share/applications/org.waylandshader.NiriController.desktop
-  share/doc/niri-waylandshader/{README,REFACTORING,HISTORY,UPGRADING}.md
+  share/doc/niri-waylandshader/{README,REFACTORING,HISTORY,UPGRADING,MAINTENANCE}.md
   share/licenses/niri-waylandshader/
 ```
 
@@ -244,6 +244,12 @@ systemctl --user status niri-waylandshader.service graphical-session.target
 journalctl --user -b -u niri-waylandshader.service \
   -u xdg-desktop-portal.service -u xdg-desktop-portal-gnome.service
 ```
+
+For a privacy-limited, read-only report from the source checkout, run
+`python3 waylandshader/diagnose-session.py`. Optional `--journal --boot 0`
+adds bounded diagnostic signals without raw journal messages. See the
+[maintenance toolkit](MAINTENANCE.md) for package inspection, skills, rules,
+report privacy and the distinction between current snapshots and older logs.
 
 Kernel `amdgpu`/`DMUB` errors are a separate layer. In the reported machine's
 retained logs they occurred before WaylandShader startup and around stock niri

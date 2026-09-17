@@ -255,6 +255,9 @@ live-compositor restart, upstream merge or remote push was performed.
 
 ## Managed desktop session parity (0.2.2-2)
 
+Implemented in commit `0178b8ac`. The [maintenance toolkit](MAINTENANCE.md) turns
+the diagnosis and verification workflow into reusable commands and agent guidance.
+
 The user reported missing Flatpak entries in native Noctalia 5.1.0 and no Bottles
 installer file chooser, while both worked in stock niri. The packaged login
 entry ran the compositor directly instead of using stock niri's session
