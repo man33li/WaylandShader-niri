@@ -123,7 +123,7 @@ makepkg
 
 Run `makepkg` as the ordinary user. It stages the package at
 `build/niri-package/usr` and writes the package archive under `waylandshader/`.
-The current package is `26.04.ws0.2.2-2`; `26.04.ws0.2.0-1` was the first
+The current package is `26.04.ws0.2.2-3`; `26.04.ws0.2.0-1` was the first
 standalone integration. These versions do not claim the source equals the
 v26.04 tag; record the Git SHA when distributing a build.
 The recipe does not provide, conflict with, or replace stock `niri`.
@@ -387,6 +387,55 @@ This fork therefore retains reviewed upstream merges rather than package-manager
 auto-patching. The crate narrows the integration boundary; it does not eliminate
 Smithay/render-lifecycle maintenance or turn this into a universal Wayland plugin.
 
+## HDMI and hybrid-GPU outputs
+
+An output can be connected, enabled and showing the desktop while WaylandShader
+is bypassed. The current presentation adapter requires that the output's GPU
+match niri's primary render GPU. When they differ, both shader and color
+processing are bypassed and status reports:
+
+```text
+Shader presentation is unsupported when target and render GPUs differ
+```
+
+Check the actual output flags and GPU routing before changing a preset:
+
+```sh
+waylandshader-nirictl status
+journalctl --user -b -u niri-waylandshader.service \
+  --grep='using as the render node|connecting connector'
+readlink -f /sys/class/drm/card*-HDMI-A-1
+readlink -f /sys/class/drm/renderD*/device
+```
+
+In the diagnosed hybrid laptop, niri rendered on Radeon 680M (`renderD129`,
+PCI `07:00.0`), while HDMI-A-1 belonged to the discrete Radeon (`renderD128`,
+PCI `03:00.0`). The preset was loaded and the HDMI shader/color switches were
+enabled, but the GPU mismatch prevented activation. This is not an HDMI name,
+monitor-profile or shader-compilation failure.
+
+For an **HDMI-focused next session**, niri's existing render-device override can
+select the GPU connected to HDMI. Verify your own stable `/dev/dri/by-path`
+mapping first; this is the path from that particular machine, not a universal
+setting:
+
+```kdl
+debug {
+    render-drm-device "/dev/dri/by-path/pci-0000:03:00.0-render"
+}
+```
+
+Merge the field into your existing configuration rather than replacing it.
+GPU selection happens during compositor initialization: save work and use a
+normal logout/login, not a live compositor restart. This changes rendering for
+the **whole compositor**. Outputs on the other GPU become the bypassed ones,
+and using the discrete GPU can increase power consumption. The example was
+syntax-validated, not applied to the running desktop or physically qualified.
+
+Do not remove the guard, ignore another GPU, or toggle output controls to pretend
+cross-GPU processing is supported. Simultaneous effects across both GPUs require
+additional integration and native validation; package `0.2.2-3` does not add it.
+
 ## Licenses
 
 niri and the extracted Rust runtime retain GPL-3.0-or-later (the runtime inherits
@@ -395,3 +444,27 @@ controls retain MIT (`waylandshader/LICENSE`); the patched private librashader
 retains MPL-2.0.
 The combined compositor is distributed under niri's GPL obligations. Shader
 presets and other dependencies retain their own licenses.
+
+### Binary release source
+
+The [v26.04.ws0.2.2-3 prerelease](https://github.com/man33li/WaylandShader-niri/releases/tag/v26.04.ws0.2.2-3)
+provides the package, checksums and a matching source bundle. The bundle contains
+the tagged fork snapshot and the full patched librashader source, with provenance
+in `SOURCE-INFO.txt`. Librashader is based on
+`a910bee8d2ead0acf2f83b3e5ad0b8f8f66b53db`; the fork's committed
+`waylandshader/patches/librashader-gl-lifetime.patch` supplies its modifications.
+Those covered sources and modifications remain available under MPL-2.0; the
+surrounding support directory's MIT license does not relicense librashader.
+Upstream also offers GPL-3.0-only, as recorded in its crate manifests.
+
+For the normal Git-based rebuild path, clone this release tag and use the build
+commands above:
+
+```sh
+git clone --branch v26.04.ws0.2.2-3 https://github.com/man33li/WaylandShader-niri.git
+```
+
+Cargo dependencies and toolchains are still obtained through the documented
+build process and locked manifests. The source bundle is not a vendored,
+offline/hermetic build environment or a certification of every dependency's
+license obligations.

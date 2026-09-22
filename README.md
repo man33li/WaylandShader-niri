@@ -97,7 +97,7 @@ cd waylandshader
 makepkg
 ```
 
-The current recipe is **`niri-waylandshader` 26.04.ws0.2.2-2**. It installs:
+The current recipe is **`niri-waylandshader` 26.04.ws0.2.2-3**. It installs:
 
 | Component | Name |
 | --- | --- |
@@ -115,6 +115,10 @@ It restores stock niri's login-shell environment, graphical-session/portal
 lifecycle and XDG autostarts with separate fork unit names. Do **not** enable
 the compositor service globally or add duplicate portal/Noctalia autostarts.
 See [managed startup and shutdown](docs/waylandshader/README.md#managed-session-startup-and-shutdown).
+
+[Binary prereleases](https://github.com/man33li/WaylandShader-niri/releases)
+include checksums and matching fork/patched-librashader source. Read the release
+limitations before installation; a newer build does not imply cross-GPU support.
 
 Save work and log out before changing the compositor package. Install the exact
 archive from another session or a TTY, keeping a known-good package and the stock
@@ -151,6 +155,8 @@ coupling, extraction steps, API boundaries, preserved invariants and verificatio
 - Hardware desktop GL, EGLImage import/export and GPU fence support are required.
   Software renderers and differing render/scanout GPUs are rejected with bypass,
   not CPU-copy fallbacks.
+  An HDMI output wired to a different GPU can therefore display the desktop while
+  shader/color processing stays bypassed. See [hybrid-GPU output diagnosis](docs/waylandshader/README.md#hdmi-and-hybrid-gpu-outputs).
 - Active filtering disables hardware planes/direct scanout on that output.
   Animated presets schedule frames; no latency, power or VRR guarantee is made.
 - Shader distortion changes pixels, not pointer hit regions.

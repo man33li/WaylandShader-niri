@@ -97,7 +97,7 @@ python3 waylandshader/diagnose-session.py --journal \
 
 ```sh
 python3 waylandshader/verify-package.py \
-  waylandshader/niri-waylandshader-26.04.ws0.2.2-2-x86_64.pkg.tar.zst
+  waylandshader/niri-waylandshader-26.04.ws0.2.2-3-x86_64.pkg.tar.zst
 ```
 
 Use an exact archive path, not a glob that can pick an older build. Output is

@@ -317,6 +317,33 @@ compiler error. Static inspection found no demonstrated shader-before-backend
 teardown inversion. The session fix does not claim to cure this kernel/firmware
 problem, and no driver reset or boot-parameter workaround was applied.
 
+## Published build and HDMI diagnosis (0.2.2-3)
+
+This package revision rebuilds the current workspace-runtime branch, including
+the managed-session fix and maintenance documentation. It preserves the previous
+`0.2.2-2` archive instead of overwriting a known-good build. Renderer behavior
+and the private shader ABI are unchanged.
+
+Read-only inspection of a reported HDMI-A-1 bypass found:
+
+- The preset was loaded successfully, and HDMI shader/color controls were enabled.
+- Status reported different target/render GPUs, with both HDMI processing paths
+  inactive.
+- The primary renderer was Radeon 680M at PCI `07:00.0` (`renderD129`, eDP-2).
+  HDMI-A-1 belonged to the discrete Radeon at PCI `03:00.0` (`renderD128`).
+- The TTY adapter's GPU equality check and runtime eligibility condition account
+  for the bypass. It was not a missing preset or failed compilation.
+
+The existing niri render-device option was syntax-validated for an HDMI-focused
+next login, but no user configuration or live GPU selection was changed.
+Selecting the other GPU changes which outputs are eligible and can increase
+power use; this is not simultaneous cross-GPU support. The guard was retained.
+
+The GitHub prerelease includes matching fork and patched-librashader source,
+checksums and explicit verification/limitation notes. A source snapshot or
+successful build does not establish native HDMI, HDR, cross-GPU or reboot
+qualification.
+
 ## Going forward
 
 Follow [UPGRADING.md](UPGRADING.md), not the historical pinned-patch procedure.
