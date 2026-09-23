@@ -2,16 +2,18 @@
 
 Native whole-output RetroArch Slang shaders and per-monitor color controls in a
 standalone [niri fork](https://github.com/man33li/WaylandShader-niri).
-This guide covers the **0.2.2 workspace-runtime edition**.
+This guide covers the **0.3.0 multi-GPU edition**.
 
 [Refactoring process](REFACTORING.md) · [Project history](HISTORY.md) ·
-[Manual upstream upgrades and rollback](UPGRADING.md) · [Maintenance toolkit](MAINTENANCE.md)
+[Design decisions](DECISIONS.md) · [Manual upstream upgrades and rollback](UPGRADING.md) ·
+[Following Smithay](SMITHAY.md) · [Maintenance toolkit](MAINTENANCE.md)
 
 ## Repository and supported scope
 
-- The 0.2.2 source line is `refactor/waylandshader-workspace`; publishing that
-  branch does not promote it to `main`. The fork was initially based on official
-  niri `main` at `e1d3b0c47ce5bb77f16e5006aba604d23b233649` (2026-09-14).
+- The 0.3.0 source line is `refactor/waylandshader-workspace`; publishing that
+  branch does not promote it to `main`. It contains official niri `main` up to
+  `5f4469b6a992492cf7221b269e9379f42e737649` (2026-09-22); the fork started from
+  `e1d3b0c47ce5bb77f16e5006aba604d23b233649` (2026-09-14).
 - The root Cargo workspace **is the compositor source**. There is no separate
   fetched niri tree, pinned `NIRI_REV`, or maintained niri patch to apply.
 - Shader state, GLES rendering and controls live in the source-linked
@@ -123,7 +125,7 @@ makepkg
 
 Run `makepkg` as the ordinary user. It stages the package at
 `build/niri-package/usr` and writes the package archive under `waylandshader/`.
-The current package is `26.04.ws0.2.2-3`; `26.04.ws0.2.0-1` was the first
+The current package is `26.04.ws0.3.0-1`; `26.04.ws0.2.0-1` was the first
 standalone integration. These versions do not claim the source equals the
 v26.04 tag; record the Git SHA when distributing a build.
 The recipe does not provide, conflict with, or replace stock `niri`.

@@ -176,6 +176,8 @@ impl<'render> RenderElement<TtyRenderer<'render>> for ShaderElement {
 mod tests {
     use std::fs::{self, File};
     use std::os::fd::OwnedFd;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     use smithay::backend::allocator::dmabuf::{Dmabuf, DmabufAllocator};
@@ -190,6 +192,8 @@ mod tests {
     use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
     use smithay::utils::user_data::UserDataMap;
     use smithay::utils::{DeviceFd, Physical, Rectangle, Size, Transform};
+    use tracing::{Event, Level, Subscriber};
+    use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
     use waylandshader_runtime::{Manager, Transfer};
 
     use super::{gpu_copy, ShaderElement};
@@ -197,6 +201,26 @@ mod tests {
     use crate::render_helpers::renderer::{AsGlesFrame as _, AsGlesRenderer as _};
 
     type Api = GbmGlesBackend<GlesRenderer, DeviceFd>;
+
+    /// Counts Smithay's multi-GPU events: `(info, warnings)`. Smithay warns before every
+    /// fallback to CPU copies, which pixels alone cannot reveal.
+    #[derive(Clone, Default)]
+    struct MultiGpuEvents(Arc<(AtomicUsize, AtomicUsize)>);
+
+    impl<S: Subscriber> Layer<S> for MultiGpuEvents {
+        fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
+            let meta = event.metadata();
+            if meta.target() == "smithay::backend::renderer::multigpu" {
+                let (info, warnings) = &*self.0;
+                if *meta.level() <= Level::WARN {
+                    warnings
+                } else {
+                    info
+                }
+                .fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
 
     // Inverts even frames, so every frame proves the current shader output was presented.
     const SHADER: &str = r#"#version 450
@@ -276,6 +300,9 @@ void main() {
     #[test]
     #[ignore = "needs two GPUs: WAYLANDSHADER_TEST_RENDER_NODES='/dev/dri/renderD128 /dev/dri/renderD129'"]
     fn cross_gpu_presentation() {
+        let events = MultiGpuEvents::default();
+        let _events =
+            tracing::subscriber::set_default(tracing_subscriber::registry().with(events.clone()));
         let nodes = std::env::var("WAYLANDSHADER_TEST_RENDER_NODES")
             .expect("set WAYLANDSHADER_TEST_RENDER_NODES to two render node paths");
         let nodes: Vec<_> = nodes.split_whitespace().collect();
@@ -429,6 +456,19 @@ void main() {
                 }
             }
         }
+
+        // Smithay logs each shared transfer buffer it allocates, and warns before it falls
+        // back to CPU copies: gpu_copy() predicted GPU copies, so none may have occurred.
+        let (info, warnings) = &*events.0;
+        assert!(
+            info.load(Ordering::Relaxed) > 0,
+            "Smithay's multi-GPU log was not observed"
+        );
+        assert_eq!(
+            warnings.load(Ordering::Relaxed),
+            0,
+            "Smithay fell back to CPU copies that gpu_copy() did not predict"
+        );
 
         // Frames that only reach the output's GPU by CPU copy stay unfiltered and idle.
         let mut renderer = gpu.renderer(&first, &second, Fourcc::Abgr8888).unwrap();

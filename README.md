@@ -3,10 +3,12 @@
 Native whole-output RetroArch Slang shaders and per-monitor color controls for
 [niri](https://github.com/niri-wm/niri).
 
-**Version 0.2.2: workspace-runtime edition.** Shader rendering and control state
-live in the `waylandshader-runtime` Rust crate, connected to niri through small
-compositor-local adapters. This is a separately built niri fork, not a plugin
-for an unmodified compositor or a screen-capture overlay.
+**Version 0.3.0: multi-GPU edition.** Effects now also apply to monitors driven
+by another GPU, and the controller shows and saves niri's render GPU. Shader
+rendering and control state live in the `waylandshader-runtime` Rust crate,
+connected to niri through small compositor-local adapters. This is a separately
+built niri fork, not a plugin for an unmodified compositor or a screen-capture
+overlay.
 
 This version is developed on **`refactor/waylandshader-workspace`**. Publishing
 that branch does not promote it to `main`; use the checkout instructions below.
@@ -97,7 +99,7 @@ cd waylandshader
 makepkg
 ```
 
-The current recipe is **`niri-waylandshader` 26.04.ws0.2.2-3**. It installs:
+The current recipe is **`niri-waylandshader` 26.04.ws0.3.0-1**. It installs:
 
 | Component | Name |
 | --- | --- |
@@ -174,7 +176,9 @@ coupling, extraction steps, API boundaries, preserved invariants and verificatio
 - [Build, preview, packaging and controls](docs/waylandshader/README.md)
 - [Refactoring process and crate boundaries](docs/waylandshader/REFACTORING.md)
 - [Project history and verification records](docs/waylandshader/HISTORY.md)
+- [Design decisions](docs/waylandshader/DECISIONS.md)
 - [Upstream upgrades and rollback](docs/waylandshader/UPGRADING.md)
+- [Following Smithay upstream](docs/waylandshader/SMITHAY.md)
 - [Maintenance tools, skills and rules](docs/waylandshader/MAINTENANCE.md)
 - [Contributing to this fork](CONTRIBUTING.md)
 - [WaylandShader-niri issues](https://github.com/man33li/WaylandShader-niri/issues)

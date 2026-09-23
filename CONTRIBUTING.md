@@ -2,12 +2,15 @@
 
 Develop fork-specific changes on feature branches and submit them to
 [man33li/WaylandShader-niri](https://github.com/man33li/WaylandShader-niri).
-The 0.2.2 workspace-runtime source line is `refactor/waylandshader-workspace`.
+The 0.3.0 source line is `refactor/waylandshader-workspace`.
 Read the [refactoring guide](docs/waylandshader/REFACTORING.md) before changing
-the crate boundary, renderer adapters or lifecycle hooks.
+the crate boundary, renderer adapters or lifecycle hooks, and the
+[design decisions](docs/waylandshader/DECISIONS.md) before changing multi-GPU
+presentation or the render GPU preference.
 Prepare the native dependencies with `python3 waylandshader/build.py --support-only`
-before ordinary Cargo commands. Follow the [fork build guide](docs/waylandshader/README.md)
-and [manual upgrade procedure](docs/waylandshader/UPGRADING.md).
+before ordinary Cargo commands. Follow the [fork build guide](docs/waylandshader/README.md),
+the [manual upgrade procedure](docs/waylandshader/UPGRADING.md) and, for Smithay
+changes, [following Smithay upstream](docs/waylandshader/SMITHAY.md).
 
 Merge official upstream commits into a separate upgrade branch, verify them,
 then fast-forward the fork's shared `main`. Do not rebase or force-push published

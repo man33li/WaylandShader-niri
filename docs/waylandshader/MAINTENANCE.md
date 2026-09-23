@@ -5,7 +5,8 @@ extraction, session regression and package verification. They are maintained in
 this checkout, not installed as background services or global agent settings.
 
 [Build and controls](README.md) · [Refactoring](REFACTORING.md) ·
-[History](HISTORY.md) · [Upgrades and rollback](UPGRADING.md)
+[History](HISTORY.md) · [Upgrades and rollback](UPGRADING.md) ·
+[Following Smithay](SMITHAY.md) · [Design decisions](DECISIONS.md)
 
 ## The session fix this toolkit preserves
 
@@ -98,7 +99,7 @@ python3 waylandshader/diagnose-session.py --journal \
 
 ```sh
 python3 waylandshader/verify-package.py \
-  waylandshader/niri-waylandshader-26.04.ws0.2.2-3-x86_64.pkg.tar.zst
+  waylandshader/niri-waylandshader-26.04.ws0.3.0-1-x86_64.pkg.tar.zst
 ```
 
 Use an exact archive path, not a glob that can pick an older build. Output is

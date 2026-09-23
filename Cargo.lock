@@ -4248,7 +4248,7 @@ dependencies = [
 
 [[package]]
 name = "waylandshader-runtime"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "calloop",
  "parking_lot",

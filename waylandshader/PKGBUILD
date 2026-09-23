@@ -1,8 +1,8 @@
 # Build the local fork checkout: run makepkg from its waylandshader/ directory.
 pkgname=niri-waylandshader
 # Maintained manually together with CMakeLists.txt; never rewrite sources in pkgver().
-pkgver=26.04.ws0.2.2
-pkgrel=3
+pkgver=26.04.ws0.3.0
+pkgrel=1
 pkgdesc='Separately named niri with native Slang shaders and per-output color controls'
 arch=('x86_64' 'aarch64')
 url='https://github.com/man33li/WaylandShader-niri'

@@ -77,6 +77,8 @@ Use `waylandshader/check-upstream.py` and the documented merge workflow. Preserv
 both fork and upstream work, keep dependency updates separate from architecture
 moves when possible, and never downgrade Smithay simply to make old code compile.
 A sidecar patch still needs source hooks, rebuilding and semantic validation.
+Whenever the Smithay revision changes, follow the Smithay review: compare its
+CPU-copy fallback with `gpu_copy()` and run the two-GPU presentation test.
 
 After building an archive:
 
@@ -106,6 +108,8 @@ and explicitly chosen next session.
 
 - [Maintenance tools and limits](../../../docs/waylandshader/MAINTENANCE.md)
 - [Workspace extraction](../../../docs/waylandshader/REFACTORING.md)
+- [Following Smithay upstream](../../../docs/waylandshader/SMITHAY.md)
+- [Design decisions](../../../docs/waylandshader/DECISIONS.md)
 - [Upgrade and release verification](../../../docs/waylandshader/UPGRADING.md#verification-gate)
 - [Recorded graphics and lifecycle fixes](../../../docs/waylandshader/HISTORY.md)
 - [Project guardrails](../../../AGENTS.md)

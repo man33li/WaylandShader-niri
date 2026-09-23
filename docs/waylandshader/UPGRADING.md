@@ -1,6 +1,7 @@
 # Manual upstream upgrades and rollback
 
-[Build and controls](README.md) · [Refactoring process](REFACTORING.md) · [History](HISTORY.md)
+[Build and controls](README.md) · [Refactoring process](REFACTORING.md) · [History](HISTORY.md) ·
+[Following Smithay](SMITHAY.md) · [Design decisions](DECISIONS.md)
 
 The maintained repository is
 [man33li/WaylandShader-niri](https://github.com/man33li/WaylandShader-niri).
@@ -9,11 +10,12 @@ The maintained repository is
 The shared `main` keeps upstream ancestry through **merges**, not rebases,
 force-pushes, a second source clone, or a refreshed niri patch.
 
-**0.2.2 branch status:** the workspace-runtime extraction is published on
-`refactor/waylandshader-workspace`. The `main`-based upgrade/promotion workflow
-below assumes that source line has first been reviewed and promoted to the
-shared `main`. Publishing the feature branch alone does not do that; use the
-build guide to try this version without switching to an older `main`.
+**0.3.0 branch status:** the workspace-runtime line, now with multi-GPU
+presentation, is published on `refactor/waylandshader-workspace`. The
+`main`-based upgrade/promotion workflow below assumes that source line has first
+been reviewed and promoted to the shared `main`. Publishing the feature branch
+alone does not do that; use the build guide to try this version without
+switching to an older `main`.
 
 **Nothing here automatically upgrades a running compositor.** A checker can
 prepare/build a candidate, but a person resolves conflicts, validates it,
@@ -48,7 +50,7 @@ If shallow, fetch complete history before attempting merges/checks:
 git fetch --unshallow origin
 ```
 
-For the 0.2.2 source line, publish reviewed commits to its own branch:
+For the 0.3.0 source line, publish reviewed commits to its own branch:
 
 ```sh
 git push -u origin refactor/waylandshader-workspace
@@ -241,12 +243,11 @@ change: port the lifetime, history and mip-exposure fixes, rebuild from a fresh
 private dependency tree, and rerun both GL paths. Never remove the patch to make
 a failed application disappear.
 
-Smithay is used unmodified. To keep monitors whose frames would need CPU copies
-unfiltered, `gpu_copy()` in `src/waylandshader/mod.rs` repeats, with public
-APIs, the checks Smithay's multi-GPU renderer makes before it falls back to CPU
-copies (`create_shared_dma_framebuffer`). When a merge changes the pinned Smithay
-revision, compare that function and update `gpu_copy()` if its conditions
-changed; the cross-GPU test below asserts its prediction on two-GPU machines.
+Smithay reaches the fork through niri's pin, so a merge can move it. Smithay is
+used unmodified, but `gpu_copy()` in `src/waylandshader/mod.rs` repeats its
+CPU-copy fallback checks: whenever the merge changes the Smithay revision,
+follow the review in [SMITHAY.md](SMITHAY.md#review-what-changed). That guide
+also covers the rare out-of-band Smithay update.
 
 For each newly distributed upstream snapshot, increment `pkgrel` in
 `waylandshader/PKGBUILD`. When the upstream release family or extension version

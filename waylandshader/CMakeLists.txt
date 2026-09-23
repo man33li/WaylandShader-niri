@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(WaylandShaderNiri VERSION 0.2.2 LANGUAGES CXX)
+project(WaylandShaderNiri VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -92,6 +92,8 @@ install(FILES
     ../docs/waylandshader/UPGRADING.md
     ../docs/waylandshader/MAINTENANCE.md
     ../docs/waylandshader/GPU-PLAN.md
+    ../docs/waylandshader/DECISIONS.md
+    ../docs/waylandshader/SMITHAY.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/niri-waylandshader")
 install(FILES ../LICENSE
     DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/niri-waylandshader" RENAME niri-GPL-3.0)

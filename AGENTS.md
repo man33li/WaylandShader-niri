@@ -13,8 +13,11 @@ plugin. Keep changes narrowly scoped to the requested behavior.
   [.agents/skills/wayland-shader-integration/SKILL.md](.agents/skills/wayland-shader-integration/SKILL.md).
 - Commands and evidence boundaries:
   [maintenance toolkit](docs/waylandshader/MAINTENANCE.md).
-- Established architecture and history:
+- Smithay updates (normally through upstream niri merges):
+  [following Smithay upstream](docs/waylandshader/SMITHAY.md).
+- Established architecture, choices and history:
   [refactoring](docs/waylandshader/REFACTORING.md),
+  [design decisions](docs/waylandshader/DECISIONS.md),
   [session lifecycle](docs/waylandshader/README.md#managed-session-startup-and-shutdown),
   [upgrades](docs/waylandshader/UPGRADING.md).
 

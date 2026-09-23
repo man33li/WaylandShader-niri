@@ -369,6 +369,49 @@ Verification on Radeon 680M + RX 6700S is recorded in the plan's
 a real CPU-copy fallback, hotplug, performance and power remain for native
 qualification before release.
 
+## Upstream niri merge, Smithay update and 0.3.0 (26.04.ws0.3.0-1)
+
+The multi-GPU work above was committed as `526189db`, then official niri main
+`5f4469b6a992492cf7221b269e9379f42e737649` (2026-09-22) was merged: 29 upstream
+commits since `e1d3b0c4`. Its last commit moves Smithay from `22571baa` to
+`79bbed5e` with no niri code change: a GPU's context is now made current only when
+there is cleanup to do (an idle discrete GPU is no longer woken by it), plus a
+screenshot fix, a GLES 2.0 texture-binding fix, no frame callbacks to unmapped
+surfaces and layer-shell/session-lock hook fixes. The reasoning is in
+[DECISIONS.md](DECISIONS.md); the procedure is now [SMITHAY.md](SMITHAY.md).
+
+- **Conflicts:** `Cargo.toml` keeps the fork's removal of the inherited RPM/DEB
+  metadata but takes upstream's `png` dev-profile optimisation; `flake.nix` stays
+  deleted. `src/niri.rs` and `src/backend/winit.rs` merged cleanly with every
+  shader hook intact.
+- **Session launcher:** upstream now starts the login shell with
+  `exec "$SHELL" -l -c …`; the generated `niri-waylandshader-session` inherits it.
+- **Smithay review:** the multi-GPU module and GBM allocator are byte-identical
+  between the revisions, so `gpu_copy()` is unchanged; GLES frame finish still
+  releases dead dma-buf imports.
+- **Test:** the two-GPU presentation test now also fails when Smithay warns about
+  or falls back from a transfer that `gpu_copy()` predicted as a GPU copy.
+  Injecting one such warning made it fail as intended.
+- **Version:** extension 0.3.0 (new `setRenderDevice`, status fields and runtime
+  API), package `26.04.ws0.3.0-1`.
+- **Baseline:** tag `waylandshader-before-20260923-151733` and
+  `~/waylandshader-backups/20260923-151733/` (bundle, settings, niri config and
+  the installed known-good `26.04.ws0.2.2-2` archive).
+
+Verification on Radeon 680M + RX 6700S (Mesa 26.2.3, kernel 7.2.6):
+
+- `build.py --tests`; 204 niri library tests and the rest of the workspace; the
+  no-D-Bus build and both runtime feature checks; the maintenance tool tests.
+- Session launcher syntax and `systemd-analyze --user verify` of the units.
+- `niri_bridge_test` on the 680M and, with `DRI_PRIME=1`, on the RX 6700S, each
+  also with `MESA_GL_VERSION_OVERRIDE=3.3`.
+- The two-GPU presentation test in both directions.
+- A nested preview on a private bus: preset active, a broken preset rolled back
+  (working preset kept, not added to Recent), disable and re-enable.
+
+Native verification of both physical monitors is left to the user before
+promotion to `main`.
+
 ## Going forward
 
 Follow [UPGRADING.md](UPGRADING.md), not the historical pinned-patch procedure.
