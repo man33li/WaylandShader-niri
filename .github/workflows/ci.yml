@@ -16,19 +16,24 @@ jobs:
   arch-source:
     runs-on: ubuntu-24.04
     container: archlinux:base-devel
-    env:
-      WAYLANDSHADER_BRIDGE_LIB_DIR: ${{ github.workspace }}/build/niri-support/lib
-      WAYLANDSHADER_RASHADER_LIB_DIR: ${{ github.workspace }}/build/niri-deps/lib
-      LD_LIBRARY_PATH: ${{ github.workspace }}/build/niri-deps/lib
-      XDG_RUNTIME_DIR: ${{ runner.temp }}/waylandshader-runtime
-      XDG_CONFIG_HOME: ${{ runner.temp }}/waylandshader-config
     steps:
       - name: Install Arch build dependencies
         run: |
           pacman -Syu --noconfirm --needed git rust cmake ninja python pkgconf clang \
             cairo glib2 libdisplay-info libinput libpipewire libxkbcommon mesa \
             pango pixman seatd systemd wayland libepoxy qt6-base
-          install -dm700 "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME"
+      # Job-level env cannot use the runner context, and github.workspace is the host path
+      # in container jobs. Derive the paths inside the container instead.
+      - name: Prepare the build environment
+        run: |
+          install -dm700 "$RUNNER_TEMP/waylandshader-runtime" "$RUNNER_TEMP/waylandshader-config"
+          {
+            echo "WAYLANDSHADER_BRIDGE_LIB_DIR=$GITHUB_WORKSPACE/build/niri-support/lib"
+            echo "WAYLANDSHADER_RASHADER_LIB_DIR=$GITHUB_WORKSPACE/build/niri-deps/lib"
+            echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/build/niri-deps/lib"
+            echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/waylandshader-runtime"
+            echo "XDG_CONFIG_HOME=$RUNNER_TEMP/waylandshader-config"
+          } >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
