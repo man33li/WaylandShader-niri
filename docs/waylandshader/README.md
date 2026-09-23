@@ -10,8 +10,8 @@ This guide covers the **0.3.0 multi-GPU edition**.
 
 ## Repository and supported scope
 
-- The 0.3.0 source line is `refactor/waylandshader-workspace`; publishing that
-  branch does not promote it to `main`. It contains official niri `main` up to
+- The 0.3.0 source line is the fork's `main`, developed on the published
+  `refactor/waylandshader-workspace` branch. It contains official niri `main` up to
   `5f4469b6a992492cf7221b269e9379f42e737649` (2026-09-22); the fork started from
   `e1d3b0c47ce5bb77f16e5006aba604d23b233649` (2026-09-14).
 - The root Cargo workspace **is the compositor source**. There is no separate
@@ -39,7 +39,7 @@ Clone with complete history; the upgrade checker deliberately refuses shallow
 checkouts:
 
 ```sh
-git clone --branch refactor/waylandshader-workspace https://github.com/man33li/WaylandShader-niri.git
+git clone https://github.com/man33li/WaylandShader-niri.git
 cd WaylandShader-niri
 git remote add upstream https://github.com/niri-wm/niri.git
 git fetch upstream main
@@ -447,8 +447,9 @@ controller says so.
 
 Cross-GPU presentation passed a real-GPU regression on render nodes in both
 directions (Radeon 680M and RX 6700S; 8- and 10-bit targets, rotation,
-reflection and resize). Physical HDMI scanout, a real CPU-copy fallback,
-hotplug, performance and power require the native qualification in the
+reflection and resize), and the 0.3.0 package worked on the developer's laptop
+with eDP on the 680M and HDMI on the RX 6700S. Lock, suspend, hotplug, a real
+CPU-copy fallback, performance and power still need the qualification in the
 [multi-GPU plan](GPU-PLAN.md#e-native-qualification-and-release-gate).
 
 ## Licenses

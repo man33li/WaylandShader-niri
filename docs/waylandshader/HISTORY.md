@@ -409,8 +409,21 @@ Verification on Radeon 680M + RX 6700S (Mesa 26.2.3, kernel 7.2.6):
 - A nested preview on a private bus: preset active, a broken preset rolled back
   (working preset kept, not added to Recent), disable and re-enable.
 
-Native verification of both physical monitors is left to the user before
-promotion to `main`.
+**Native test and promotion.** The user installed `26.04.ws0.3.0-1` (built from
+`7c292b76`) on the development laptop, where eDP-2 is on the Radeon 680M and
+HDMI-A-1 on the RX 6700S, and reported that it works as intended in the native
+session. The user has not yet had time to test specific edge cases. Until
+longer use is recorded here, treat as unqualified:
+
+- lock/unlock, suspend/resume, hotplug and GPU removal;
+- saving the render GPU and logging in with it;
+- a real CPU-copy transfer;
+- performance and power.
+
+`main` was then fast-forwarded to this line and both branches were pushed. The
+promotion commit changes documentation only, so the tested package still matches
+the promoted source. The known-good `0.2.2-2` archive stays in the backup for
+rollback.
 
 ## Going forward
 

@@ -10,8 +10,8 @@ connected to niri through small compositor-local adapters. This is a separately
 built niri fork, not a plugin for an unmodified compositor or a screen-capture
 overlay.
 
-This version is developed on **`refactor/waylandshader-workspace`**. Publishing
-that branch does not promote it to `main`; use the checkout instructions below.
+This version is on the fork's **`main`** branch; the checkout instructions below
+use it.
 
 ## What WaylandShader adds
 
@@ -42,7 +42,7 @@ and the compositor/graphics development libraries listed there.
 Clone with full history and build as your normal user:
 
 ```sh
-git clone --branch refactor/waylandshader-workspace https://github.com/man33li/WaylandShader-niri.git
+git clone https://github.com/man33li/WaylandShader-niri.git
 cd WaylandShader-niri
 python3 waylandshader/build.py --jobs 4 --tests
 python3 waylandshader/run-nested.py
@@ -159,7 +159,8 @@ coupling, extraction steps, API boundaries, preserved invariants and verificatio
 - Effects run on niri's render GPU. Monitors driven by another GPU are processed
   when Smithay transfers frames there by GPU copy; CPU-copy transfers stay
   unfiltered with a reported reason. The controller can save the render GPU for
-  the next login. Native multi-GPU qualification is pending; see
+  the next login. It works on the developer's hybrid laptop; lock, suspend,
+  hotplug, CPU-copy transfers, performance and power are not yet qualified. See
   [hybrid-GPU outputs](docs/waylandshader/README.md#hdmi-and-hybrid-gpu-outputs).
 - Active filtering disables hardware planes/direct scanout on that output.
   Animated presets schedule frames; no latency, power or VRR guarantee is made.

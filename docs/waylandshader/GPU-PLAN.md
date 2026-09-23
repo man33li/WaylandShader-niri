@@ -1,6 +1,6 @@
 # Multi-GPU rendering and GPU-selection plan
 
-Status: phases A–D are implemented; phase E (native-output qualification) is pending. See [implementation status](#implementation-status). The research and verification below record the design baseline.
+Status: phases A–D are implemented and released as 0.3.0; phase E (native-output qualification) is partly done: normal use on both physical monitors works, edge cases are open. See [implementation status](#implementation-status). The research and verification below record the design baseline.
 
 Baseline: niri fork `246a4ce5887cfa8424ff2e39dde6596d41e3d994`, Smithay `22571baa20d34d71092942dbb520c4e3fbbd6263`.
 
@@ -158,5 +158,6 @@ Verified on the development machine (Radeon 680M + RX 6700S, Mesa 26.2.3):
 - A throwaway private-bus run of the control service with both real GPUs: device names and by-path identities, Qt client status parsing (`waylandshader-nirictl status`) and `setRenderDevice` saves, rejection and automatic restoration.
 - Nested preview (winit) on a private bus: after enabling and loading a preset, the nested output reported the preset active with the new `prepare` API and no `gpu` section. The controller, fed a mock native-session status, showed the Render GPU section (automatic, pending, fallback and not-adopted states) and the per-output "Unfiltered" reason; screenshots were inspected. Clicking Save was not driven (no input injection tool); its D-Bus call was exercised above.
 - The workspace test suite (200 niri library tests plus the other crates), the no-D-Bus build and the independent runtime checks passed.
+- Native session, 0.3.0 package: the user reported that effects work as intended with eDP-2 on the 680M and HDMI-A-1 on the RX 6700S.
 
-Not verified: physical HDMI/eDP scanout with both GPUs, a real Smithay CPU-copy fallback (not reproducible on this hardware without driver fault injection), hotplug and device retirement, capture/lock behavior on native outputs, and performance or power. Phase E remains the release gate.
+Not verified: lock/unlock, suspend/resume, hotplug and device retirement, capture on native outputs, saving the render GPU and logging in with it, a real Smithay CPU-copy fallback (not reproducible on this hardware without driver fault injection), and performance or power. These remain phase E work; record results in [HISTORY.md](HISTORY.md) as longer use produces them.

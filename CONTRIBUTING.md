@@ -2,7 +2,7 @@
 
 Develop fork-specific changes on feature branches and submit them to
 [man33li/WaylandShader-niri](https://github.com/man33li/WaylandShader-niri).
-The 0.3.0 source line is `refactor/waylandshader-workspace`.
+The 0.3.0 source line is the fork's `main`.
 Read the [refactoring guide](docs/waylandshader/REFACTORING.md) before changing
 the crate boundary, renderer adapters or lifecycle hooks, and the
 [design decisions](docs/waylandshader/DECISIONS.md) before changing multi-GPU

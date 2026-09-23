@@ -10,12 +10,10 @@ The maintained repository is
 The shared `main` keeps upstream ancestry through **merges**, not rebases,
 force-pushes, a second source clone, or a refreshed niri patch.
 
-**0.3.0 branch status:** the workspace-runtime line, now with multi-GPU
-presentation, is published on `refactor/waylandshader-workspace`. The
-`main`-based upgrade/promotion workflow below assumes that source line has first
-been reviewed and promoted to the shared `main`. Publishing the feature branch
-alone does not do that; use the build guide to try this version without
-switching to an older `main`.
+**0.3.0 branch status:** the workspace-runtime line with multi-GPU presentation
+was promoted to the shared `main` after native testing. Maintain it on `main`,
+following the procedure below; `refactor/waylandshader-workspace` remains only as
+the published history of the 0.2.2/0.3.0 development line.
 
 **Nothing here automatically upgrades a running compositor.** A checker can
 prepare/build a candidate, but a person resolves conflicts, validates it,
@@ -50,10 +48,11 @@ If shallow, fetch complete history before attempting merges/checks:
 git fetch --unshallow origin
 ```
 
-For the 0.3.0 source line, publish reviewed commits to its own branch:
+Publish reviewed commits by fast-forwarding `main`, as described in
+[Commit, promote and publish](#commit-promote-and-publish):
 
 ```sh
-git push -u origin refactor/waylandshader-workspace
+git push origin main
 ```
 
 Do not force-push to make a rejected push succeed. Fetch and inspect the remote
