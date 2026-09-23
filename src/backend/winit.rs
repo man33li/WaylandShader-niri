@@ -315,7 +315,7 @@ impl Winit {
         let unlocked = matches!(niri.lock_state, crate::niri::LockState::Unlocked);
         if let Some(effect) =
             niri.waylandshader
-                .prepare(self.backend.renderer(), output, unlocked, true)
+                .prepare(self.backend.renderer(), output, unlocked, None)
         {
             elements.insert(0, crate::waylandshader::ShaderElement::from(effect).into());
         }

@@ -91,6 +91,7 @@ install(FILES
     ../docs/waylandshader/HISTORY.md
     ../docs/waylandshader/UPGRADING.md
     ../docs/waylandshader/MAINTENANCE.md
+    ../docs/waylandshader/GPU-PLAN.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/niri-waylandshader")
 install(FILES ../LICENSE
     DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/niri-waylandshader" RENAME niri-GPL-3.0)

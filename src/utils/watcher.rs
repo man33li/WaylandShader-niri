@@ -184,14 +184,23 @@ impl WatcherInner {
 }
 
 pub fn setup(state: &mut State, config_path: &ConfigPath, includes: Vec<PathBuf>) {
+    // The render GPU preference depends on the loaded file and its includes.
+    let gpu = state.niri.waylandshader_gpu.clone();
+    let configured = state.niri.config.borrow().debug.render_drm_device.clone();
+    gpu.config_loaded(config_path, &includes, Some(configured.as_deref()));
+
     // Parsing the config actually takes > 20 ms on my beefy machine, so let's do it on the
     // watcher thread.
-    let process = |path: &ConfigPath| {
-        path.load().map_config_res(|res| {
+    let process = move |path: &ConfigPath| {
+        let res = path.load().map_config_res(|res| {
             res.map_err(|err| {
                 warn!("{err:?}");
             })
-        })
+        });
+        let configured = res.config.as_ref().ok();
+        let configured = configured.map(|config| config.debug.render_drm_device.as_deref());
+        gpu.config_loaded(path, &res.includes, configured);
+        res
     };
 
     let (tx, rx) = calloop::channel::sync_channel(1);

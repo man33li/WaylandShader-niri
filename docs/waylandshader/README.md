@@ -389,52 +389,65 @@ Smithay/render-lifecycle maintenance or turn this into a universal Wayland plugi
 
 ## HDMI and hybrid-GPU outputs
 
-An output can be connected, enabled and showing the desktop while WaylandShader
-is bypassed. The current presentation adapter requires that the output's GPU
-match niri's primary render GPU. When they differ, both shader and color
-processing are bypassed and status reports:
+niri composes every output on one render GPU, chosen at login. Effects run on
+that GPU, before Smithay transfers each frame to the GPU that drives the monitor.
+A monitor on another GPU is processed when that transfer is a GPU copy of a
+shared dma-buf. When Smithay can only transfer through CPU copies, the monitor
+stays unfiltered, because reading back every animated frame would be too
+expensive, and status reports:
 
 ```text
-Shader presentation is unsupported when target and render GPUs differ
+Only CPU copies reach this monitor's GPU
 ```
 
-Check the actual output flags and GPU routing before changing a preset:
+niri decides this with the same allocation and import checks Smithay makes before
+it falls back to CPU copies, when the monitor first renders and whenever its mode
+or format changes, never every frame.
+
+Check the actual routing before changing a preset:
 
 ```sh
 waylandshader-nirictl status
 journalctl --user -b -u niri-waylandshader.service \
   --grep='using as the render node|connecting connector'
-readlink -f /sys/class/drm/card*-HDMI-A-1
-readlink -f /sys/class/drm/renderD*/device
 ```
 
-In the diagnosed hybrid laptop, niri rendered on Radeon 680M (`renderD129`,
-PCI `07:00.0`), while HDMI-A-1 belonged to the discrete Radeon (`renderD128`,
-PCI `03:00.0`). The preset was loaded and the HDMI shader/color switches were
-enabled, but the GPU mismatch prevented activation. This is not an HDMI name,
-monitor-profile or shader-compilation failure.
+Each entry of `outputs` reports `transfer` (`same-gpu`, `gpu-copy`, `cpu-copy`;
+empty in nested sessions) and a nonempty `bypass` reason when it is unfiltered.
+On the native session, `gpu` reports the render GPU in use, the GPU driving each
+output, and the GPU configured for the next login.
 
-For an **HDMI-focused next session**, niri's existing render-device override can
-select the GPU connected to HDMI. Verify your own stable `/dev/dri/by-path`
-mapping first; this is the path from that particular machine, not a universal
-setting:
+### Choosing the render GPU
+
+Automatic selection is the default; either GPU can then serve monitors on both.
+The controller's **Render GPU** section can save a different GPU for the next
+login (for example, a discrete GPU for demanding presets, at a power cost). It
+writes only a file that you adopt explicitly, by adding this line at the end of
+the niri configuration file in use (the controller shows its path):
 
 ```kdl
-debug {
-    render-drm-device "/dev/dri/by-path/pci-0000:03:00.0-render"
-}
+include optional=true "waylandshader-gpu.kdl"
 ```
 
-Merge the field into your existing configuration rather than replacing it.
-GPU selection happens during compositor initialization: save work and use a
-normal logout/login, not a live compositor restart. This changes rendering for
-the **whole compositor**. Outputs on the other GPU become the bypassed ones,
-and using the discrete GPU can increase power consumption. The example was
-syntax-validated, not applied to the running desktop or physically qualified.
+The controller never edits that configuration file. It writes
+`waylandshader-gpu.kdl` next to it atomically with a stable
+`/dev/dri/by-path` device path, reloads the configuration to confirm the choice
+takes effect, and restores the previous file when another part of the
+configuration overrides it. It refuses to replace a hand-edited, read-only or
+symlinked managed file. Automatic selection cannot clear a
+`render-drm-device` set elsewhere: niri merges `debug` settings across includes
+and an absent value does not reset an earlier one.
 
-Do not remove the guard, ignore another GPU, or toggle output controls to pretend
-cross-GPU processing is supported. Simultaneous effects across both GPUs require
-additional integration and native validation; package `0.2.2-3` does not add it.
+GPU selection happens during compositor initialization. The running session
+keeps its GPU until a normal logout/login; do not restart the compositor live.
+If the saved GPU is missing at login, niri selects automatically and the
+controller says so.
+
+Cross-GPU presentation passed a real-GPU regression on render nodes in both
+directions (Radeon 680M and RX 6700S; 8- and 10-bit targets, rotation,
+reflection and resize). Physical HDMI scanout, a real CPU-copy fallback,
+hotplug, performance and power require the native qualification in the
+[multi-GPU plan](GPU-PLAN.md#e-native-qualification-and-release-gate).
 
 ## Licenses
 

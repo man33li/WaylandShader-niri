@@ -69,6 +69,10 @@ plugin. Keep changes narrowly scoped to the requested behavior.
 - Final presentation is filtered; source captures are not. Preserve framebuffer
   capture, damage/commit semantics, animation scheduling and active-filter
   scanout restrictions through every element wrapper.
+- TTY presentation draws through `MultiFrame`, never its inner GLES frame: only
+  tracked damage reaches a monitor on another GPU. Outputs whose frames would
+  reach their GPU by CPU copy stay bypassed; `waylandshader::gpu_copy` repeats
+  Smithay's transfer checks and must follow its multi-GPU code on Smithay bumps.
 - Retire workers/native shader resources before backend/EGL display destruction.
   Trace actual shared ownership and EGLImage sibling semantics, not field names
   alone. An INFO SIGTERM line is not proof of a crash or completed destruction.

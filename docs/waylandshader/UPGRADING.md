@@ -241,6 +241,13 @@ change: port the lifetime, history and mip-exposure fixes, rebuild from a fresh
 private dependency tree, and rerun both GL paths. Never remove the patch to make
 a failed application disappear.
 
+Smithay is used unmodified. To keep monitors whose frames would need CPU copies
+unfiltered, `gpu_copy()` in `src/waylandshader/mod.rs` repeats, with public
+APIs, the checks Smithay's multi-GPU renderer makes before it falls back to CPU
+copies (`create_shared_dma_framebuffer`). When a merge changes the pinned Smithay
+revision, compare that function and update `gpu_copy()` if its conditions
+changed; the cross-GPU test below asserts its prediction on two-GPU machines.
+
 For each newly distributed upstream snapshot, increment `pkgrel` in
 `waylandshader/PKGBUILD`. When the upstream release family or extension version
 changes, update `pkgver` appropriately and reset `pkgrel` to 1; extension version
@@ -278,6 +285,8 @@ systemd-analyze --user verify \
 
 build/niri-support/niri_bridge_test waylandshader/tests/fixtures
 MESA_GL_VERSION_OVERRIDE=3.3 build/niri-support/niri_bridge_test waylandshader/tests/fixtures
+WAYLANDSHADER_TEST_RENDER_NODES='/dev/dri/renderD129 /dev/dri/renderD128' \
+  cargo test --locked --lib --jobs 4 waylandshader::tests::cross_gpu_presentation -- --ignored
 python3 waylandshader/run-nested.py
 ```
 
@@ -286,7 +295,11 @@ driver option. On hybrid Mesa systems, repeat both GPU commands with `DRI_PRIME=
 for the other supported GPU. Exit 77 / a CTest skip means the required GPU path
 was unavailable, **not passed**. The retained GPU regression covers EGLImage
 live mipmaps/base-level exposure, history/reset/resize, parameters, orientation,
-color and border clamp. Readback occurs only in the test executable.
+color and border clamp. Readback occurs only in the test executables. On machines
+with two GPUs, the ignored cross-GPU test presents the shader through Smithay's
+transfer in both directions (8/10-bit targets, rotation, reflection, resize) and
+fails if presentation damage stops reaching the target GPU; list your own render
+nodes.
 
 In the preview, inspect the actual GUI and exercise a real preset plus color-only
 mode, enable/bypass, a parameter change, invalid-preset rollback and resize.
@@ -305,8 +318,9 @@ saved `WAYLANDSHADER_CONFIG`, never by restarting the live desktop.
 Before production adoption, validate on the intended physical outputs: ordinary
 rendering, disable/reenable, lock/unlock, suspend/resume, resize/scale and
 hotplug. Keep work saved and a known-good login path. Cross-GPU, HDR and VRR
-support must not be inferred from a passing nested session; the initial shader
-pipeline is SDR and rejects different render/scanout GPUs. Do not claim a
+support must not be inferred from a passing nested session; the shader pipeline
+is SDR, and outputs whose GPU only receives CPU-copied frames stay unfiltered. On
+hybrid machines, validate monitors on both GPUs together. Do not claim a
 security or lifecycle check you did not perform.
 
 On a systemd desktop, also validate the [managed session lifecycle](README.md#managed-session-startup-and-shutdown)

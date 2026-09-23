@@ -344,6 +344,31 @@ checksums and explicit verification/limitation notes. A source snapshot or
 successful build does not establish native HDMI, HDR, cross-GPU or reboot
 qualification.
 
+## Cross-GPU presentation and render GPU preference
+
+Implements phases A–D of the [multi-GPU plan](GPU-PLAN.md) on the workspace
+runtime branch; no package was built or installed and the running desktop was not
+touched.
+
+- The TTY adapter now draws the shader output through `MultiFrame`, so the
+  presentation damage reaches a monitor on another GPU. Previously it drew on the
+  inner GLES frame; untracked damage could leave another GPU's monitor stale, which
+  is why cross-GPU outputs were blocked.
+- Smithay stays unmodified. Before an output on another GPU renders, niri repeats
+  with public APIs the allocation and import checks Smithay makes before it falls
+  back to CPU copies, and caches the answer until the output's mode, format or GPU
+  changes. GPU copies are processed; CPU-copy outputs stay unfiltered with a
+  reported reason and without animation redraws. The render-GPU equality guard
+  was removed.
+- The controller reports each monitor's route, the render GPU in use, startup
+  fallback and the next-login preference, and can save the render GPU through an
+  explicitly included `waylandshader-gpu.kdl` with validation and rollback.
+
+Verification on Radeon 680M + RX 6700S is recorded in the plan's
+[implementation status](GPU-PLAN.md#implementation-status). Physical HDMI scanout,
+a real CPU-copy fallback, hotplug, performance and power remain for native
+qualification before release.
+
 ## Going forward
 
 Follow [UPGRADING.md](UPGRADING.md), not the historical pinned-patch procedure.

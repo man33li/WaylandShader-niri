@@ -48,6 +48,7 @@ sudo. No new Python package dependencies are required by the maintenance CLIs.
 | `waylandshader/check-upstream.py` | Prepare/check a committed upstream merge candidate | Isolated candidate work; no promotion, installation or live restart |
 | `waylandshader/watch-upstream.py` | Opt-in scheduled upstream checking | Creates only its owned maintenance units when requested |
 | `build/niri-support/niri_bridge_test` | Retained real-GPU EGLImage/temporal/mipmap regression | Run explicitly on supported hardware; exit77 is a skip, not success |
+| `cargo test --lib waylandshader::tests::cross_gpu_presentation -- --ignored` | Retained two-GPU presentation/damage regression; needs `WAYLANDSHADER_TEST_RENDER_NODES` | Render nodes only; no DRM master, modeset or live session changes |
 
 ### Read-only session evidence
 

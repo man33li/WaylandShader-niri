@@ -118,7 +118,7 @@ See [managed startup and shutdown](docs/waylandshader/README.md#managed-session-
 
 [Binary prereleases](https://github.com/man33li/WaylandShader-niri/releases)
 include checksums and matching fork/patched-librashader source. Read the release
-limitations before installation; a newer build does not imply cross-GPU support.
+limitations before installation; each release states its GPU qualification.
 
 Save work and log out before changing the compositor package. Install the exact
 archive from another session or a TTY, keeping a known-good package and the stock
@@ -153,10 +153,12 @@ coupling, extraction steps, API boundaries, preserved invariants and verificatio
 
 - **SDR sRGB/RGBA8**, not an HDR-preserving pipeline.
 - Hardware desktop GL, EGLImage import/export and GPU fence support are required.
-  Software renderers and differing render/scanout GPUs are rejected with bypass,
-  not CPU-copy fallbacks.
-  An HDMI output wired to a different GPU can therefore display the desktop while
-  shader/color processing stays bypassed. See [hybrid-GPU output diagnosis](docs/waylandshader/README.md#hdmi-and-hybrid-gpu-outputs).
+  Software renderers are rejected with bypass, not CPU-copy fallbacks.
+- Effects run on niri's render GPU. Monitors driven by another GPU are processed
+  when Smithay transfers frames there by GPU copy; CPU-copy transfers stay
+  unfiltered with a reported reason. The controller can save the render GPU for
+  the next login. Native multi-GPU qualification is pending; see
+  [hybrid-GPU outputs](docs/waylandshader/README.md#hdmi-and-hybrid-gpu-outputs).
 - Active filtering disables hardware planes/direct scanout on that output.
   Animated presets schedule frames; no latency, power or VRR guarantee is made.
 - Shader distortion changes pixels, not pointer hit regions.

@@ -67,15 +67,23 @@ struct Data {
     persist_revision: u64,
     pending_preset: bool,
     status: Value,
+    // Host-owned render GPU status, merged into published status.
+    #[cfg_attr(not(feature = "dbus"), allow(dead_code))]
+    gpu: Value,
     config_error: String,
     service_error: String,
 }
+
+/// Host implementation of a render GPU preference request; runs on the control service thread.
+type RenderDeviceHandler = Box<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 
 struct Inner {
     data: Mutex<Data>,
     config_path: Option<PathBuf>,
     redraw: OnceLock<Ping>,
     notify: OnceLock<mpsc::SyncSender<()>>,
+    #[cfg_attr(not(feature = "dbus"), allow(dead_code))]
+    render_device: OnceLock<RenderDeviceHandler>,
 }
 
 #[derive(Clone)]
@@ -116,12 +124,14 @@ impl Control {
                 persist_revision: 0,
                 pending_preset: false,
                 status,
+                gpu: Value::Null,
                 config_error,
                 service_error: String::new(),
             }),
             config_path,
             redraw: OnceLock::new(),
             notify: OnceLock::new(),
+            render_device: OnceLock::new(),
         }))
     }
 
@@ -227,6 +237,27 @@ impl Control {
         }
     }
 
+    /// Publishes host-owned render GPU status; hosts without GPU selection never call this.
+    pub fn set_gpu(&self, gpu: Value) {
+        let mut data = self.0.data.lock();
+        if data.gpu != gpu {
+            data.gpu = gpu;
+            drop(data);
+            self.notify();
+        }
+    }
+
+    /// Installs the host's render GPU preference handler for `setRenderDevice` requests.
+    ///
+    /// It runs on the control service thread, never on the compositor thread; only the
+    /// first installation takes effect.
+    pub fn set_render_device_handler(
+        &self,
+        handler: impl Fn(&str) -> Result<(), String> + Send + Sync + 'static,
+    ) {
+        let _ = self.0.render_device.set(Box::new(handler));
+    }
+
     fn notify(&self) {
         if let Some(sender) = self.0.notify.get() {
             // Full means a wakeup is already queued; the worker reads latest state.
@@ -239,6 +270,9 @@ impl Control {
         let data = self.0.data.lock();
         let mut status = data.status.clone();
         status["recentPresets"] = json!(&data.committed.recent_presets);
+        if !data.gpu.is_null() {
+            status["gpu"] = data.gpu.clone();
+        }
         let errors: Vec<&str> = [
             status["error"].as_str().unwrap_or(""),
             &data.config_error,
@@ -603,6 +637,18 @@ impl Service {
         }
         self.0
             .change_output(&id, |output| output.saturation = saturation as f32)
+    }
+
+    /// Saves niri's render GPU for the next login: an empty string selects automatically,
+    /// otherwise one of the stable device paths in `gpu.devices`.
+    #[zbus(name = "setRenderDevice")]
+    fn set_render_device(&self, device: String) -> Result<bool, ControlError> {
+        // Runs on the zbus worker; the host validates and writes configuration here.
+        let handler = (self.0).0.render_device.get().ok_or_else(|| {
+            ControlError::Failed("Render GPU selection is unavailable in this session".to_owned())
+        })?;
+        handler(&device).map_err(ControlError::Failed)?;
+        Ok(true)
     }
 
     #[zbus(signal, name = "statusChanged")]

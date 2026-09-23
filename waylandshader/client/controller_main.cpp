@@ -8,6 +8,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -18,6 +19,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSignalBlocker>
+#include <QStandardItemModel>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <charconv>
@@ -140,6 +142,29 @@ public:
         colorRow->addWidget(saturationLabel);
         colorRow->addWidget(m_saturation, 1);
         layout->addLayout(colorRow);
+        m_gpuBox = new QGroupBox(QStringLiteral("Render GPU"), this);
+        auto* gpuLayout = new QVBoxLayout(m_gpuBox);
+        m_gpuActive = new QLabel(m_gpuBox);
+        m_gpuActive->setWordWrap(true);
+        m_gpuActive->setTextFormat(Qt::PlainText);
+        m_gpuActive->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        gpuLayout->addWidget(m_gpuActive);
+        auto* gpuRow = new QHBoxLayout;
+        m_gpuDevice = new QComboBox(m_gpuBox);
+        m_gpuDevice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        m_gpuDevice->setMinimumContentsLength(18);
+        m_gpuDevice->setAccessibleName(QStringLiteral("Render GPU for the next niri login"));
+        m_gpuSave = new QPushButton(QStringLiteral("Save for next login"), m_gpuBox);
+        gpuRow->addWidget(m_gpuDevice, 1);
+        gpuRow->addWidget(m_gpuSave);
+        gpuLayout->addLayout(gpuRow);
+        m_gpuMessage = new QLabel(m_gpuBox);
+        m_gpuMessage->setWordWrap(true);
+        m_gpuMessage->setTextFormat(Qt::PlainText);
+        m_gpuMessage->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        gpuLayout->addWidget(m_gpuMessage);
+        m_gpuBox->setVisible(false);
+        layout->addWidget(m_gpuBox);
         m_summary = new QLabel(QStringLiteral("Connecting to %1…").arg(compositorName), this);
         m_summary->setWordWrap(true);
         m_summary->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -200,6 +225,24 @@ public:
         connect(m_saturation, &QDoubleSpinBox::valueChanged, this, [this](double value) {
             changeOutput(&ControllerClient::setOutputSaturation, value);
         });
+        connect(m_gpuDevice, &QComboBox::currentIndexChanged, this, [this] {
+            m_gpuFeedback.clear();
+            updateGpu();
+        });
+        connect(m_gpuSave, &QPushButton::clicked, this, [this] {
+            m_gpuPending = true;
+            m_gpuFeedback.clear();
+            m_operationError.clear();
+            updateGpu();
+            showErrors();
+            m_client.setRenderDevice(m_gpuDevice->currentData().toString(), [this](const ControllerError& error) {
+                m_gpuPending = false;
+                if (!error)
+                    m_gpuFeedback = QStringLiteral("Saved. niri will use it from the next login.");
+                updateGpu();
+                finishMutation(error);
+            });
+        });
         for (auto* spin : { m_gamma, m_saturation }) {
             connect(spin, &QDoubleSpinBox::editingFinished, this, [this] {
                 // Refresh only after focus moves; this callback never submits an edit.
@@ -233,6 +276,99 @@ private:
         m_enabled->setEnabled(available && !m_enablePending);
         m_parameters->setEnabled(available && !m_loading);
         updateOutputAvailability();
+        updateGpu(); // setAvailable(true) runs on every status update.
+    }
+
+    static QString deviceLabel(const ControllerGpuDevice& device)
+    {
+        return device.name.isEmpty() ? device.node : device.name;
+    }
+
+    QString outputRoute(const ControllerOutput& output) const
+    {
+        const auto& gpu = m_client.status().gpu;
+        if (!gpu && output.transfer.isEmpty())
+            return { }; // Older compositors do not report the render path.
+        if (output.transfer.isEmpty())
+            return QStringLiteral("Not rendered yet");
+        QString target = gpu ? gpu->outputs.value(output.name) : QString();
+        if (gpu) {
+            for (const auto& device : gpu->devices) {
+                if (!target.isEmpty() && device.node == target) {
+                    target = deviceLabel(device);
+                    break;
+                }
+            }
+        }
+        if (target.isEmpty())
+            target = QStringLiteral("another GPU");
+        const QString route = output.transfer == QStringLiteral("same-gpu") ? QStringLiteral("same GPU")
+            : output.transfer == QStringLiteral("gpu-copy") ? QStringLiteral("copied to %1 by the GPU").arg(target)
+            : output.transfer == QStringLiteral("cpu-copy") ? QStringLiteral("CPU copy to %1 — effects bypassed").arg(target)
+                                                            : output.transfer;
+        return gpu && gpu->active ? QStringLiteral("Rendered on %1; %2").arg(deviceLabel(*gpu->active), route) : route;
+    }
+
+    void updateGpu()
+    {
+        const auto& gpu = m_client.status().gpu;
+        m_gpuBox->setVisible(gpu.has_value());
+        if (!gpu)
+            return;
+        m_gpuActive->setText(QStringLiteral("In use: ")
+            + (gpu->active ? QStringLiteral("%1 (%2)").arg(gpu->active->name, gpu->active->node) : QStringLiteral("unknown"))
+            + (gpu->fallback ? QStringLiteral(" — the configured GPU was unavailable at login; automatic selection is in use")
+                             : QString()));
+        m_gpuActive->setToolTip(QStringLiteral("Requested at login: ") + gpu->startup.value_or(QStringLiteral("Automatic")));
+        // configured may name a device by path or node, or something not selectable at all.
+        QString configured = gpu->configured.value_or(QString());
+        bool known = !gpu->configured;
+        for (const auto& device : gpu->devices) {
+            if (!known && (device.path == configured || device.node == configured)) {
+                configured = device.path;
+                known = true;
+            }
+        }
+        QVector<std::pair<QString, QString>> items { { QStringLiteral("Automatic"), QString() } };
+        for (const auto& device : gpu->devices)
+            items.push_back({ deviceLabel(device) + QStringLiteral(" — ") + device.path, device.path });
+        if (!known)
+            items.push_back({ QStringLiteral("Configured: ") + configured, configured });
+        bool changed = m_gpuDevice->count() != items.size();
+        for (int index = 0; !changed && index < m_gpuDevice->count(); ++index) {
+            changed = m_gpuDevice->itemText(index) != items[index].first
+                || m_gpuDevice->itemData(index).toString() != items[index].second;
+        }
+        // Keep an unsaved choice; otherwise follow the configured value.
+        const QString selected = m_gpuDevice->currentData().toString();
+        const bool edited = m_gpuDevice->currentIndex() >= 0 && selected != m_gpuConfigured;
+        const QSignalBlocker blocked(m_gpuDevice);
+        if (changed) {
+            m_gpuDevice->clear();
+            for (const auto& [text, data] : items)
+                m_gpuDevice->addItem(text, data);
+            if (!known)
+                static_cast<QStandardItemModel*>(m_gpuDevice->model())->item(m_gpuDevice->count() - 1)->setEnabled(false);
+        }
+        const int index = edited ? m_gpuDevice->findData(selected) : -1;
+        m_gpuDevice->setCurrentIndex(index >= 0 ? index : m_gpuDevice->findData(configured));
+        m_gpuConfigured = configured;
+        const bool ready = gpu->preference.state == QStringLiteral("ready");
+        m_gpuDevice->setEnabled(m_available && !m_gpuPending);
+        m_gpuSave->setEnabled(m_available && !m_gpuPending && ready
+            && m_gpuDevice->currentIndex() >= 0 && m_gpuDevice->currentData().toString() != configured);
+        QStringList messages;
+        if (!m_gpuFeedback.isEmpty())
+            messages.push_back(m_gpuFeedback);
+        else if (gpu->pending)
+            messages.push_back(QStringLiteral("Takes effect at the next niri login."));
+        if (!ready) {
+            messages.push_back(gpu->preference.detail);
+            if (gpu->preference.state == QStringLiteral("not-adopted"))
+                messages.push_back(gpu->preference.include);
+        }
+        m_gpuMessage->setText(messages.join(QLatin1Char('\n')));
+        m_gpuMessage->setVisible(!messages.isEmpty());
     }
 
     const ControllerOutput* selectedOutput() const
@@ -293,10 +429,12 @@ private:
         m_outputState->setText(!output                        ? QString()
                 : pending                                     ? QStringLiteral("Saving…")
                 : !m_client.status().enabled                  ? QStringLiteral("Bypassed")
+                : !output->bypass.isEmpty()                   ? QStringLiteral("Unfiltered: ") + output->bypass
                 : output->shaderActive && output->colorActive ? QStringLiteral("Preset + color active")
                 : output->shaderActive                        ? QStringLiteral("Preset active")
                 : output->colorActive                         ? QStringLiteral("Color active")
                                                               : QStringLiteral("No processing active"));
+        m_outputState->setToolTip(output ? outputRoute(*output) : QString());
         updateOutputAvailability();
     }
 
@@ -567,6 +705,13 @@ private:
     QDoubleSpinBox* m_gamma;
     QDoubleSpinBox* m_saturation;
     QLabel* m_outputState;
+    QGroupBox* m_gpuBox;
+    QLabel* m_gpuActive;
+    QComboBox* m_gpuDevice;
+    QPushButton* m_gpuSave;
+    QLabel* m_gpuMessage;
+    QString m_gpuConfigured;
+    QString m_gpuFeedback;
     QLabel* m_summary;
     QLabel* m_error;
     QWidget* m_parameters;
@@ -584,6 +729,7 @@ private:
     bool m_pathEdited = false;
     bool m_updatingOutputs = false;
     bool m_outputPending = false;
+    bool m_gpuPending = false;
 };
 } // namespace
 

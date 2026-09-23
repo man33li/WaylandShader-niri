@@ -6,6 +6,7 @@
 mod bridge;
 pub mod control;
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -26,6 +27,25 @@ use control::{Control, OutputSettings, Settings};
 
 type Compilation = Result<Runtime, String>;
 
+/// How the host delivers an output's presentation to the GPU that scans it out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Transfer {
+    SameGpu,
+    GpuCopy,
+    /// Reading back every animated frame costs too much: the output stays unfiltered.
+    CpuCopy,
+}
+
+impl Transfer {
+    fn label(self) -> &'static str {
+        match self {
+            Self::SameGpu => "same-gpu",
+            Self::GpuCopy => "gpu-copy",
+            Self::CpuCopy => "cpu-copy",
+        }
+    }
+}
+
 struct OutputRuntime {
     id: Id,
     profile: String,
@@ -37,12 +57,12 @@ struct OutputRuntime {
     attempted: Option<u64>,
     context: usize,
     geometry: Option<(Size<i32, Physical>, Transform, f64)>,
-    supported: bool,
 }
 
 struct Live {
-    // Siblings are released before the desktop storage/context.
+    // Siblings and host wrappers of them are released before the desktop storage/context.
     textures: Option<[GlesTexture; 2]>,
+    presentation: Option<Box<dyn Any>>,
     runtime: Option<Runtime>,
     size: Size<i32, Buffer>,
     options: OutputSettings,
@@ -53,6 +73,8 @@ struct Live {
     frame: u64,
     start: Instant,
     fps: f32,
+    // Reported by the host each frame; `None` when it has a single GPU (nested).
+    transfer: Option<Transfer>,
     error: String,
     dirty: bool,
 }
@@ -66,8 +88,13 @@ impl Live {
         self.dirty = true;
     }
 
-    fn retire(&mut self) {
+    fn drop_textures(&mut self) {
+        self.presentation = None;
         self.textures = None;
+    }
+
+    fn retire(&mut self) {
+        self.drop_textures();
         self.runtime = None;
         self.reset();
     }
@@ -85,9 +112,9 @@ impl OutputRuntime {
             attempted: None,
             context: 0,
             geometry: None,
-            supported: true,
             live: Rc::new(RefCell::new(Live {
                 textures: None,
+                presentation: None,
                 runtime: None,
                 size: (0, 0).into(),
                 options: OutputSettings::default(),
@@ -98,6 +125,7 @@ impl OutputRuntime {
                 frame: 0,
                 start: Instant::now(),
                 fps: 60.,
+                transfer: None,
                 error: String::new(),
                 dirty: true,
             })),
@@ -260,13 +288,13 @@ impl Manager {
             }
             self.dirty |= std::mem::take(&mut output.live.borrow_mut().dirty);
         }
-        // A preset replacement commits across all connected supported outputs,
-        // not whichever worker finishes first. Any compile error preserves every
-        // old chain and its parameter metadata.
-        let complete =
-            self.outputs.values().filter(|o| o.supported).all(|o| {
-                o.attempted == Some(self.settings.preset_generation) && o.worker.is_none()
-            });
+        // A preset replacement commits across all connected outputs, not whichever
+        // worker finishes first. Any compile error preserves every old chain and its
+        // parameter metadata. Compilation is independent of the output's transfer.
+        let complete = self
+            .outputs
+            .values()
+            .all(|o| o.attempted == Some(self.settings.preset_generation) && o.worker.is_none());
         if complete && self.outputs.values().any(|o| o.candidate.is_some()) {
             let failure = self
                 .outputs
@@ -302,12 +330,14 @@ impl Manager {
         }
     }
 
+    /// Returns the output's presentation effect, if active. Multi-GPU hosts report how the
+    /// output's frames reach its GPU; `None` means there is only one GPU.
     pub fn prepare(
         &mut self,
         renderer: &mut GlesRenderer,
         output: &Output,
         unlocked: bool,
-        same_gpu: bool,
+        transfer: Option<Transfer>,
     ) -> Option<ShaderElement> {
         self.refresh();
         if self.locked == unlocked {
@@ -324,7 +354,6 @@ impl Manager {
             state.release();
         }
         state.context = context;
-        state.supported = same_gpu;
         let options = self
             .settings
             .outputs
@@ -344,31 +373,27 @@ impl Manager {
         let mut live = state.live.borrow_mut();
         if state.geometry != Some(geometry) {
             state.geometry = Some(geometry);
-            live.textures = None;
+            live.drop_textures();
             live.reset();
+        }
+        if live.transfer != transfer {
+            live.transfer = transfer;
+            live.dirty = true;
         }
         live.options = options;
         live.fps = output
             .current_mode()
             .map_or(60., |mode| mode.refresh as f32 / 1000.);
         let active = unlocked
-            && same_gpu
             && self.settings.enabled
+            && transfer != Some(Transfer::CpuCopy)
             && ((live.shader && live.options.shader_enabled) || live.options.color_enabled);
         if live.active != active {
             live.active = active;
             live.reset();
         }
-        if !same_gpu && self.settings.enabled {
-            live.error =
-                "Shader presentation is unsupported when target and render GPUs differ".into();
-            self.dirty = true;
-        }
         drop(live);
-        if same_gpu
-            && state.worker.is_none()
-            && state.attempted != Some(self.settings.preset_generation)
-        {
+        if state.worker.is_none() && state.attempted != Some(self.settings.preset_generation) {
             let display = renderer.egl_context().display().clone();
             let preset = self.settings.preset.clone();
             let parameters = self.settings.parameters.clone();
@@ -402,12 +427,6 @@ impl Manager {
             None
         };
         drop(live);
-        if self.outputs.values().all(|state| !state.supported) {
-            self.loading = false;
-            self.preset_failed = true;
-            self.error = "Shader presentation requires an output on the render GPU".into();
-            self.dirty = true;
-        }
         self.publish();
         element
     }
@@ -442,7 +461,13 @@ impl Manager {
             if error.is_empty() && !live.error.is_empty() { error = live.error.clone(); }
             serde_json::json!({"id":state.profile,"name":name,"shaderEnabled":live.options.shader_enabled,
                 "colorEnabled":live.options.color_enabled,"gamma":live.options.gamma,
-                "saturation":live.options.saturation,"shaderActive":shader,"colorActive":color})
+                "saturation":live.options.saturation,"shaderActive":shader,"colorActive":color,
+                "transfer":live.transfer.map_or("", Transfer::label),
+                "bypass":if live.transfer == Some(Transfer::CpuCopy) {
+                    "Only CPU copies reach this monitor's GPU"
+                } else {
+                    ""
+                }})
         }).collect::<Vec<_>>();
         self.control.publish(serde_json::json!({"generation":self.settings.generation,
             "presetGeneration":self.settings.preset_generation,"enabled":self.settings.enabled,
@@ -494,6 +519,25 @@ impl Element for ShaderElement {
 }
 
 impl ShaderElement {
+    /// Calls `present` with the ready output texture and a host cache slot, or returns `None`.
+    ///
+    /// The runtime empties the slot whenever it replaces or retires the texture, before it
+    /// releases the native storage, so hosts can keep renderer-specific wrappers there.
+    pub fn with_output<T>(
+        &self,
+        present: impl FnOnce(&GlesTexture, &mut Option<Box<dyn Any>>) -> T,
+    ) -> Option<T> {
+        let mut live = self.live.borrow_mut();
+        let Live {
+            textures,
+            presentation,
+            ready,
+            ..
+        } = &mut *live;
+        let texture = textures.as_ref().filter(|_| *ready)?;
+        Some(present(&texture[1], presentation))
+    }
+
     fn capture(&self, frame: &mut GlesFrame<'_, '_>) -> Result<(), String> {
         let mut live = self.live.borrow_mut();
         live.ready = false;
@@ -503,7 +547,7 @@ impl ShaderElement {
             .to_logical(1)
             .to_buffer(1, Transform::Normal);
         if live.textures.is_none() || live.size != size {
-            live.textures = None;
+            live.drop_textures();
             live.reset();
             let images = frame
                 .with_context(|_| live.runtime.as_mut().unwrap().resize(size.w, size.h))

@@ -5,11 +5,13 @@
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QJsonObject>
+#include <QMap>
 #include <QObject>
 #include <QString>
 #include <QStringList>
 #include <QVector>
 #include <functional>
+#include <optional>
 
 namespace WaylandShader {
 
@@ -29,6 +31,31 @@ struct ControllerOutput {
     OutputSettings settings;
     bool shaderActive = false;
     bool colorActive = false;
+    QString transfer; // "", "same-gpu", "gpu-copy" or "cpu-copy"
+    QString bypass; // nonempty: why this monitor is shown unfiltered
+};
+
+struct ControllerGpuDevice {
+    QString node;
+    QString path;
+    QString name;
+};
+
+struct ControllerGpu {
+    std::optional<ControllerGpuDevice> active;
+    std::optional<QString> startup;
+    bool fallback = false;
+    std::optional<QString> configured;
+    bool pending = false;
+    QVector<ControllerGpuDevice> devices;
+    QMap<QString, QString> outputs; // output name -> render node of the GPU driving it
+    struct {
+        QString state;
+        QString detail;
+        std::optional<QString> config;
+        std::optional<QString> file;
+        QString include;
+    } preference;
 };
 
 struct ControllerStatus {
@@ -41,6 +68,7 @@ struct ControllerStatus {
     QString error;
     QVector<ControllerParameter> parameters;
     QVector<ControllerOutput> outputs;
+    std::optional<ControllerGpu> gpu; // absent on backends without render GPU selection
     QJsonObject json;
 };
 
@@ -71,6 +99,7 @@ public:
     void setOutputColorEnabled(const QString& id, bool enabled, Reply reply);
     void setOutputGamma(const QString& id, double gamma, Reply reply);
     void setOutputSaturation(const QString& id, double saturation, Reply reply);
+    void setRenderDevice(const QString& device, Reply reply);
 
 signals:
     void statusChanged(const WaylandShader::ControllerStatus& status);

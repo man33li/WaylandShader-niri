@@ -4,7 +4,7 @@ use std::fmt::Write;
 use std::iter::zip;
 use std::num::NonZeroU64;
 use std::os::fd::{AsFd, OwnedFd};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -51,7 +51,7 @@ use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{DeviceFd, Transform};
+use smithay::utils::{DeviceFd, Physical, Size, Transform};
 use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
@@ -60,6 +60,7 @@ use smithay::wayland::presentation::Refresh;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
+use waylandshader_runtime::Transfer;
 
 use super::{IpcOutputMap, RenderResult};
 use crate::backend::OutputId;
@@ -101,6 +102,8 @@ pub struct Tty {
     // Whether the debug tinting is enabled.
     debug_tint: bool,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
+    // The startup render-drm-device request, and whether it was unavailable.
+    render_request: (Option<PathBuf>, bool),
 }
 
 pub type TtyRenderer<'render> = MultiRenderer<
@@ -388,6 +391,8 @@ struct Surface {
     /// Plot name for the presentation misprediction plot.
     presentation_misprediction_plot_name: tracy_client::PlotName,
     sequence_delta_plot_name: tracy_client::PlotName,
+    /// WaylandShader: whether frames of this (format, size) reach the output's GPU by GPU copy.
+    gpu_copy: Option<((Fourcc, Size<i32, Physical>), bool)>,
 }
 
 pub struct SurfaceDmabufFeedback {
@@ -487,6 +492,15 @@ impl Tty {
                 Ok::<_, anyhow::Error>((primary_node, primary_render_node))
             })?;
 
+        // A configured render device that could not be used fell back to automatic selection.
+        let requested = config.borrow().debug.render_drm_device.clone();
+        let fallback = requested.as_ref().is_some_and(|path| {
+            DrmNode::from_path(path).map_or(true, |node| {
+                node != primary_node && node != primary_render_node
+            })
+        });
+        let render_request = (requested, fallback);
+
         let mut node_path = String::new();
         if let Some(path) = primary_render_node.dev_path() {
             write!(node_path, "{path:?}").unwrap();
@@ -509,10 +523,15 @@ impl Tty {
             update_output_config_on_resume: false,
             debug_tint: false,
             ipc_outputs: Arc::new(Mutex::new(HashMap::new())),
+            render_request,
         })
     }
 
     pub fn init(&mut self, niri: &mut Niri) {
+        let (requested, fallback) = self.render_request.clone();
+        niri.waylandshader_gpu
+            .set_active(self.primary_render_node, requested, fallback);
+
         // If the session is inactive, skip initialization because we won't be able to do much with
         // the devices anyway. We'll get ActivateSession and add the devices there instead.
         //
@@ -819,6 +838,13 @@ impl Tty {
                 None
             }
         };
+
+        if let Some(render_node) = render_node {
+            if let Ok(mut renderer) = self.gpu_manager.single_renderer(&render_node) {
+                niri.waylandshader_gpu
+                    .add_device(render_node, renderer.as_gles_renderer());
+            }
+        }
 
         if render_node == Some(self.primary_render_node) && self.dmabuf_global.is_none() {
             let render_node = self.primary_render_node;
@@ -1213,6 +1239,7 @@ impl Tty {
 
             if was_last {
                 self.gpu_manager.as_mut().remove_node(&render_node);
+                niri.waylandshader_gpu.remove_device(render_node);
                 // Trigger re-enumeration in order to remove the device from gpu_manager.
                 let _ = self.gpu_manager.devices();
             }
@@ -1551,6 +1578,7 @@ impl Tty {
             time_since_presentation_plot_name,
             presentation_misprediction_plot_name,
             sequence_delta_plot_name,
+            gpu_copy: None,
         };
 
         let res = device.surfaces.insert(crtc, surface);
@@ -1891,6 +1919,35 @@ impl Tty {
             return rv;
         }
 
+        // Effects run on the render GPU; frames that only reach another GPU by CPU copy would
+        // read back every animated frame, so those outputs stay unfiltered.
+        let target = device.render_node.unwrap_or(self.primary_render_node);
+        let transfer = if target == self.primary_render_node {
+            Transfer::SameGpu
+        } else {
+            let key = (
+                surface.compositor.format(),
+                output
+                    .current_mode()
+                    .map_or_else(Size::default, |mode| mode.size),
+            );
+            if surface.gpu_copy.map(|(known, _)| known) != Some(key) {
+                let supported = crate::waylandshader::gpu_copy(
+                    &mut self.gpu_manager,
+                    self.primary_render_node,
+                    target,
+                    key.0,
+                    key.1,
+                );
+                surface.gpu_copy = Some((key, supported));
+            }
+            if surface.gpu_copy.is_some_and(|(_, supported)| supported) {
+                Transfer::GpuCopy
+            } else {
+                Transfer::CpuCopy
+            }
+        };
+
         let mut renderer = match self.gpu_manager.renderer(
             &self.primary_render_node,
             &device.render_node.unwrap_or(self.primary_render_node),
@@ -1919,11 +1976,12 @@ impl Tty {
 
         // Apply only at presentation: captures keep the unfiltered scene.
         let unlocked = matches!(niri.lock_state, crate::niri::LockState::Unlocked);
-        let same_gpu =
-            device.render_node.unwrap_or(self.primary_render_node) == self.primary_render_node;
-        let effect =
-            niri.waylandshader
-                .prepare(renderer.as_gles_renderer(), output, unlocked, same_gpu);
+        let effect = niri.waylandshader.prepare(
+            renderer.as_gles_renderer(),
+            output,
+            unlocked,
+            Some(transfer),
+        );
         let filtering = effect.is_some();
         if let Some(effect) = effect {
             elements.insert(0, crate::waylandshader::ShaderElement::from(effect).into());
@@ -2269,6 +2327,16 @@ impl Tty {
         let mut guard = self.ipc_outputs.lock().unwrap();
         *guard = ipc_outputs;
         niri.ipc_outputs_changed = true;
+
+        let primary_render_node = self.primary_render_node;
+        niri.waylandshader_gpu
+            .set_outputs(self.devices.values().flat_map(|device| {
+                let node = device.render_node.unwrap_or(primary_render_node);
+                device
+                    .surfaces
+                    .values()
+                    .map(move |surface| (surface.name.connector.clone(), node))
+            }));
     }
 
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {

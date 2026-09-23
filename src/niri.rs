@@ -202,6 +202,7 @@ const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995
 
 pub struct Niri {
     pub waylandshader: waylandshader_runtime::Manager,
+    pub waylandshader_gpu: crate::waylandshader::gpu::Gpu,
     pub config: Rc<RefCell<Config>>,
 
     /// Output config from the config file.
@@ -2635,10 +2636,12 @@ impl Niri {
             .unwrap();
 
         drop(config_);
+        let waylandshader =
+            waylandshader_runtime::Manager::new(crate::waylandshader::output_profile);
+        let waylandshader_gpu = crate::waylandshader::gpu::Gpu::new(&waylandshader.control);
         let mut niri = Self {
-            waylandshader: waylandshader_runtime::Manager::new(
-                crate::waylandshader::output_profile,
-            ),
+            waylandshader,
+            waylandshader_gpu,
             config,
             config_file_output_config,
             config_file_watcher: None,
