@@ -31,13 +31,13 @@ zbus = "5"
 [workspace.dependencies.smithay]
 # version = "0.4.1"
 git = "https://github.com/Smithay/smithay.git"
-rev = "22571baa20d34d71092942dbb520c4e3fbbd6263"
+rev = "79bbed5e1199090d787115614847a79c76607181"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 # version = "0.1.0"
 git = "https://github.com/Smithay/smithay.git"
-rev = "22571baa20d34d71092942dbb520c4e3fbbd6263"
+rev = "79bbed5e1199090d787115614847a79c76607181"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
@@ -165,3 +165,4 @@ debug = false
 [profile.dev.package]
 insta.opt-level = 3
 similar.opt-level = 3
+png.opt-level = 3
